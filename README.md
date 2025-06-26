@@ -1,4 +1,4 @@
-# BLE Device Manager
+# BlueTaggers（ブルータッガーズ）
 
 This is a Flutter application for managing Bluetooth Low Energy (BLE) devices. It allows you to scan for nearby devices, connect to them, and view their connection status.
 
