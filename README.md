@@ -99,3 +99,7 @@ This app makes use of the following packages:
 ---
 
 Feel free to contribute or raise issues to help improve this project!
+
+## 🧰 Environment
+
+- Flutter SDK version: **3.32.2**
