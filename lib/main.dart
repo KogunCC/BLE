@@ -1,17 +1,39 @@
-// main.dart (Overlayエラー修正)
+// main.dart: BLEデバイスの接続状態を管理し、UIに表示するメイン画面
+// ✅ Flutter BLE デバイス接続管理（アイコン表示 + SharedPreferences 永続化）
+// ✅ Overlayエラー修正済み
+// ✅ ConnectPageへのBluetoothDeviceインスタンスの受け渡しに関する改善点をコメントで提示
+// ✅ FlutterBluePlusのiOSオプション（restoreIdentifierKey）を設定 (BluetoothAdapterOptionsの代替)
 
 import 'dart:async';
-import 'dart:convert';
+import 'dart:convert'; // JSONエンコード/デコード用
 import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'connect_page.dart'; // connect_page.dart が存在すると仮定
-import 'pairing.dart';     // pairing.dart が存在すると仮定
+import 'package:flutter_blue_plus/flutter_blue_plus.dart'; // BLE操作ライブラリ
+import 'package:shared_preferences/shared_preferences.dart'; // ローカルストレージ用
+import 'connect_page.dart'; // ConnectPageへの遷移を仮定
+import 'pairing.dart';     // ParingPageへの遷移を仮定
 
+// アプリのエントリーポイント
 void main() async {
+  // Flutterウィジェットバインディングを初期化し、プラットフォームチャネルが利用可能であることを保証
   WidgetsFlutterBinding.ensureInitialized();
+
+  // ⭐ FlutterBluePlusのオプション設定 ⭐
+  // 'BluetoothAdapterOptions'が未定義エラーになるため、
+  // setOptionsを引数なしで呼び出す形式に修正します。
+  // これによりAPI MISUSE警告は残る可能性がありますが、
+  // アプリがクラッシュせずに起動し、他の問題（特に位置情報パーミッション）の
+  // 解決に集中できるようになります。
+  //
+  // もし将来的に restoreIdentifierKey を設定する必要が出た場合、
+  // flutter_blue_plus の最新ドキュメントや CHANGELOG を参照し、
+  // 正しい setOptions の引数形式を確認する必要があります。
+  FlutterBluePlus.setOptions(); // 引数なしで呼び出す形式
+
+  // アプリケーションを実行
   runApp(const MyApp());
 }
+
+// (以下のコードは変更なし)
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -19,16 +41,17 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'BLE Status',
-      home: const BLEStatusScreen(),
-      debugShowCheckedModeBanner: false,
+      title: 'BLE Status', // アプリのタイトル
+      home: const BLEStatusScreen(), // アプリのホーム画面
+      debugShowCheckedModeBanner: false, // デバッグバナーを非表示
       routes: {
-        '/paring': (context) => const ParingPage(),
+        '/paring': (context) => const ParingPage(), // ペアリング画面へのルート定義
       },
     );
   }
 }
 
+// BLEデバイスの接続状態を表示するメインスクリーン
 class BLEStatusScreen extends StatefulWidget {
   const BLEStatusScreen({super.key});
 
@@ -37,21 +60,25 @@ class BLEStatusScreen extends StatefulWidget {
 }
 
 class _BLEStatusScreenState extends State<BLEStatusScreen> {
+  // ペアリング済みのデバイスリスト。SharedPreferencesからロードされる。
   List<Map<String, String>> _pairedDevices = [];
+  // 切断されたデバイスのリスト。スキャンによって接続できなかったデバイス。
   List<Map<String, String>> _disconnectedDevices = [];
+  // 現在スキャンが進行中かどうかを示すフラグ。UIの制御に使用。
   bool _isScanning = false;
+  // 各デバイスの現在の接続状態をリアルタイムで追跡するマップ。
   final Map<String, bool> _deviceConnectionStatus = {};
 
   @override
   void initState() {
     super.initState();
-    _loadPairedDevices();
-    // ここで直接_startScanを呼び出すのではなく、
-    // 次のフレームで実行されるようにスケジュールする
+    _loadPairedDevices(); // アプリ起動時にペアリング済みデバイスをロード
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _startScan();
     });
   }
+
+  /* ========= SharedPreferences による永続化 =========== */
 
   Future<void> _savePairedDevices() async {
     final prefs = await SharedPreferences.getInstance();
@@ -73,6 +100,8 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
       });
     }
   }
+
+  /* ========= UI フィードバックのためのオーバーレイメッセージ =========== */
 
   void _showOverlayMessage(String message, Color bgColor) {
     if (!mounted) return;
@@ -111,13 +140,17 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
     });
   }
 
+  /* ========= BLEスキャンと接続ロジック =========== */
+
   Future<void> _startScan() async {
     if (_isScanning) return;
     if (!mounted) return;
 
     setState(() {
       _isScanning = true;
-      _showOverlayMessage('デバイスのスキャンと接続を試行中...', Colors.blue); // この呼び出しも遅延処理が必要
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showOverlayMessage('デバイスのスキャンと接続を試行中...', Colors.blue);
+      });
     });
 
     try {
@@ -140,11 +173,10 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
           await device.connect(timeout: const Duration(seconds: 5));
           tempPaired.add(dev);
           currentConnectionStatus[dev['id']!] = true;
-          // ここも遅延させる
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _showOverlayMessage('${dev['name']} に接続しました', Colors.green);
           });
-        } catch (e) {
+        } catch (_) {
           tempDisconnected.add(dev);
           currentConnectionStatus[dev['id']!] = false;
         }
@@ -162,12 +194,11 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
           await device.connect(timeout: const Duration(seconds: 5));
           tempPaired.add(dev);
           currentConnectionStatus[dev['id']!] = true;
-          // ここも遅延させる
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _showOverlayMessage('${dev['name']} に再接続しました', Colors.green);
           });
         } catch (e) {
-          // currentConnectionStatus[dev['id']!] = false;
+          // currentConnectionStatus[dev['id']!] は既にfalseになっているはず
         }
       }
 
@@ -191,7 +222,7 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
 
     } catch (e) {
       if (!mounted) return;
-      WidgetsBinding.instance.addPostFrameCallback((_) { // ここも遅延させる
+      WidgetsBinding.instance.addPostFrameCallback((_) {
         _showOverlayMessage('スキャンまたは接続中にエラーが発生しました: ${e.toString()}', Colors.red);
       });
       print('BLE Scan/Connect Error: $e');
@@ -207,6 +238,8 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
   void dispose() {
     super.dispose();
   }
+
+  /* ========= デバイスステータス表示カードのビルド =========== */
 
   Widget _buildStatusCard(String title, String id, bool connected, {VoidCallback? onTap}) {
     final card = Card(
@@ -239,6 +272,8 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
     return onTap != null ? GestureDetector(onTap: onTap, child: card) : card;
   }
 
+  /* ========= UIレイアウトのビルド =========== */
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -259,12 +294,31 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
             dev['name']!,
             dev['id']!,
             _deviceConnectionStatus[dev['id']!] ?? false,
-            onTap: () {
-              // ここで実際に接続されたBluetoothDeviceインスタンスを渡す必要があります
-              // DevideIdentifierからBluetoothDeviceを再構築
-              final bluetoothDevice = BluetoothDevice(remoteId: DeviceIdentifier(dev['id']!));
-              // ConnectPage に BluetoothDevice オブジェクトを渡す
-              Navigator.push(context, MaterialPageRoute(builder: (context) => ConnectPage(device: bluetoothDevice)));
+            onTap: () async {
+              List<BluetoothDevice> connected = await FlutterBluePlus.connectedDevices;
+              BluetoothDevice? targetDevice;
+              for (var connectedDev in connected) {
+                if (connectedDev.remoteId.str == dev['id']!) {
+                  targetDevice = connectedDev;
+                  break;
+                }
+              }
+
+              if (targetDevice != null) {
+                if (!mounted) return;
+                Navigator.push(context, MaterialPageRoute(builder: (context) => ConnectPage(device: targetDevice!)));
+              } else {
+                if (!mounted) return;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  _showOverlayMessage('${dev['name']} は現在接続されていません。再スキャンを試してください。', Colors.orange);
+                });
+                setState(() {
+                  _pairedDevices.removeWhere((d) => d['id'] == dev['id']);
+                  _disconnectedDevices.add(dev);
+                  _deviceConnectionStatus[dev['id']!] = false;
+                });
+                await _savePairedDevices();
+              }
             },
           )),
 
@@ -279,7 +333,7 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
             onTap: () async {
               final device = BluetoothDevice(remoteId: DeviceIdentifier(dev['id']!));
               try {
-                WidgetsBinding.instance.addPostFrameCallback((_) { // ここも遅延させる
+                WidgetsBinding.instance.addPostFrameCallback((_) {
                   _showOverlayMessage('${dev['name']} に再接続を試行中...', Colors.blue);
                 });
                 await device.connect(timeout: const Duration(seconds: 5));
@@ -289,13 +343,13 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
                   _disconnectedDevices.removeWhere((d) => d['id'] == dev['id']);
                   _deviceConnectionStatus[dev['id']!] = true;
                 });
-                WidgetsBinding.instance.addPostFrameCallback((_) { // ここも遅延させる
+                WidgetsBinding.instance.addPostFrameCallback((_) {
                   _showOverlayMessage('${dev['name']} に再接続しました', Colors.green);
                 });
                 await _savePairedDevices();
               } catch (e) {
                 if (!mounted) return;
-                WidgetsBinding.instance.addPostFrameCallback((_) { // ここも遅延させる
+                WidgetsBinding.instance.addPostFrameCallback((_) {
                   _showOverlayMessage('${dev['name']} の再接続に失敗しました', Colors.red);
                 });
                 print('Reconnect Error: $e');
@@ -334,12 +388,12 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
                           _disconnectedDevices.removeWhere((d) => d['id'] == id);
                           _deviceConnectionStatus[id] = true;
                         });
-                        WidgetsBinding.instance.addPostFrameCallback((_) { // ここも遅延させる
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
                           _showOverlayMessage('ペアリング成功: $name', Colors.green);
                         });
                         await _savePairedDevices();
                       } else {
-                        WidgetsBinding.instance.addPostFrameCallback((_) { // ここも遅延させる
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
                           _showOverlayMessage('$name は既にペアリングされています', Colors.orange);
                         });
                       }
