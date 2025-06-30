@@ -115,12 +115,10 @@ class _ParingPageState extends State<ParingPage> {
         setState(() {
           for (var result in results) {
             final device = result.device;
-            final name = device.platformName.isNotEmpty ? device.platformName : 'Unknown Device';
-            final id = device.remoteId.str;
-
-            // 重複を避けてデバイスを追加
-            if (!_deviceList.any((d) => d['id'] == id)) {
-              _deviceList.add({'name': name, 'id': id});
+            // platformNameが空でない場合のみデバイスを追加
+            // 'Unknown Device'という名前を割り当てる必要がなくなります
+            if (device.platformName.isNotEmpty && !_deviceList.any((d) => d['id'] == device.remoteId.str)) {
+              _deviceList.add({'name': device.platformName, 'id': device.remoteId.str});
             }
           }
         });

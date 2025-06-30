@@ -1,5 +1,5 @@
 # Uncomment this line to define a global platform for your project
-# platform :ios, '12.0'
+# platform :ios, '12.0' # iOSデプロイメントターゲットが12.0より低い場合はコメントアウトを外して適切なバージョンに設定
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -36,8 +36,34 @@ target 'Runner' do
   end
 end
 
+# 既存の post_install ブロックに permission_handler の設定を統合
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+
+    # ここから permission_handler の設定を統合
+    target.build_configurations.each do |config|
+      # GCC_PREPROCESSOR_DEFINITIONS はビルド設定にマクロを定義するために使用されます。
+      # 既存の定義があればそれを継承し、新しい定義を追加します。
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= ['$(inherited)']
+
+      # ここに `permission_handler` のパーミッション定義を追加します。
+      # 必要のないパーミッションはコメントアウトするか削除してください。
+      # 詳細情報: https://github.com/Baseflow/flutter-permission-handler/blob/main/permission_handler_apple/ios/Classes/PermissionHandlerEnums.h
+
+      # 位置情報パーミッションの設定:
+      # 'PERMISSION_LOCATION' は locationWhenInUse と locationAlways の両方を有効にします。
+      # アプリケーションが locationWhenInUse のみ必要とする場合は、
+      # 'PERMISSION_LOCATION_WHENINUSE=1' のみを指定し、'PERMISSION_LOCATION=0' にします。
+      # dart: [PermissionGroup.location, PermissionGroup.locationAlways, PermissionGroup.locationWhenInUse]
+      # 今回のケースでは 'PERMISSION_LOCATION_WHENINUSE=1' のみを使用します。
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'PERMISSION_LOCATION=0' # 全体の位置情報は無効
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'PERMISSION_LOCATION_WHENINUSE=1' # アプリ使用中の位置情報のみ有効
+
+      # Bluetooth パーミッションの設定:
+      # dart: PermissionGroup.bluetooth
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'PERMISSION_BLUETOOTH=1'
+    end
+    # ここまで permission_handler の設定
   end
 end
