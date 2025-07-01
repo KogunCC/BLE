@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math'; // pow 関数を使用するためにインポート
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:bleapp/utils/app_constants.dart';
 
 // main.dart はこのConnectPageに遷移する際、BluetoothDeviceオブジェクトを渡す必要があります。
 // 例: Navigator.push(context, MaterialPageRoute(builder: (context) => ConnectPage(device: yourConnectedDevice)));
@@ -53,11 +54,11 @@ class _ConnectPageState extends State<ConnectPage> {
           _rssi = null; // 切断されたらRSSIをクリア
         });
         _rssiTimer?.cancel(); // 切断されたらタイマーを停止
-        _showOverlayMessage('デバイスが切断されました', Colors.red);
+        _showOverlayMessage('デバイスが切断されました', AppColors.errorColor);
       } else if (state == BluetoothConnectionState.connected) {
          // 再接続された場合はRSSI監視を再開
          _startRssiMonitoring();
-         _showOverlayMessage('デバイスが再接続されました', Colors.green);
+         _showOverlayMessage('デバイスが再接続されました', AppColors.successColor);
          setState(() {
             _deviceName = widget.device.platformName.isNotEmpty
                 ? widget.device.platformName
@@ -73,7 +74,7 @@ class _ConnectPageState extends State<ConnectPage> {
     _rssiTimer?.cancel();
 
     // デバイスが接続状態であるか確認
-    if (await widget.device.isConnected) {
+    if (widget.device.isConnected) {
       _rssiTimer = Timer.periodic(const Duration(seconds: 1), (_) async {
         try {
           int rssi = await widget.device.readRssi();
@@ -82,7 +83,7 @@ class _ConnectPageState extends State<ConnectPage> {
             _rssi = rssi;
           });
         } catch (e) {
-          print('RSSI取得エラー: $e'); // デバッグ用にエラーをコンソールに出力
+          
           if (!mounted) return;
           setState(() {
             _rssi = null; // エラー発生時はRSSIをクリア
@@ -149,7 +150,7 @@ class _ConnectPageState extends State<ConnectPage> {
     });
     _showOverlayMessage(
         _notificationOn ? '通知をONにしました' : '通知をOFFにしました',
-        _notificationOn ? Colors.green : Colors.red);
+        _notificationOn ? AppColors.successColor : AppColors.errorColor);
     // ここに実際の通知設定ロジックを追加（例: デバイスの特性への書き込み）
   }
 
@@ -176,10 +177,10 @@ class _ConnectPageState extends State<ConnectPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F5EF),
+      backgroundColor: AppColors.backgroundColor,
       appBar: AppBar(
         title: const Text('接続状態', style: TextStyle(color: Colors.white)),
-        backgroundColor: const Color(0xFF66B2A3),
+        backgroundColor: AppColors.primaryColor,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white), // アイコンの色も白に
           onPressed: () {
@@ -199,7 +200,7 @@ class _ConnectPageState extends State<ConnectPage> {
                 style: const TextStyle(
                   fontSize: 32,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFF004D40),
+                  color: AppColors.textColor,
                 ),
                 textAlign: TextAlign.center, // 中央揃え
               ),
@@ -209,7 +210,7 @@ class _ConnectPageState extends State<ConnectPage> {
                 style: const TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFF004D40),
+                  color: AppColors.textColor,
                 ),
               ),
               const SizedBox(height: 10),
@@ -219,7 +220,7 @@ class _ConnectPageState extends State<ConnectPage> {
                   '推定距離: ${_estimateDistance(_rssi!)} m',
                   style: const TextStyle(
                     fontSize: 18,
-                    color: Color(0xFF004D40),
+                    color: AppColors.textColor,
                   ),
                 ),
               const SizedBox(height: 10),
@@ -227,14 +228,14 @@ class _ConnectPageState extends State<ConnectPage> {
                 _rssi != null && _deviceName != '接続されたデバイスがありません (未接続)' ? '接続済み' : '未接続', // RSSIが取得できていれば「接続済み」
                 style: TextStyle(
                     fontSize: 18,
-                    color: (_rssi != null && _deviceName != '接続されたデバイスがありません (未接続)') ? const Color(0xFF004D40) : Colors.red), // 未接続なら赤色
+                    color: (_rssi != null && _deviceName != '接続されたデバイスがありません (未接続)') ? AppColors.textColor : AppColors.errorColor), // 未接続なら赤色
               ),
               const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: _toggleNotification,
                 style: ElevatedButton.styleFrom(
                   backgroundColor:
-                      _notificationOn ? Colors.green : Colors.grey,
+                      _notificationOn ? AppColors.successColor : AppColors.disconnectedColor,
                   padding:
                       const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
                   shape: RoundedRectangleBorder(
@@ -250,7 +251,7 @@ class _ConnectPageState extends State<ConnectPage> {
               ElevatedButton(
                 onPressed: _startRssiMonitoring, // 再スキャンではなくRSSI監視を再開
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF00695C),
+                  backgroundColor: AppColors.accentColor,
                   padding:
                       const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
                   shape: RoundedRectangleBorder(

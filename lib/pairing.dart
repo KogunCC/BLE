@@ -1,7 +1,9 @@
+// ignore_for_file: use_build_context_synchronously
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart'; // パーミッションハンドリングのため追加
+import 'package:bleapp/utils/app_constants.dart';
 
 class ParingPage extends StatefulWidget {
   const ParingPage({super.key});
@@ -39,17 +41,15 @@ class _ParingPageState extends State<ParingPage> {
         final bool bluetoothConnectGranted = await Permission.bluetoothConnect.request().isGranted;
         final bool locationWhenInUseGranted = await Permission.locationWhenInUse.request().isGranted;
 
-        print('Permission Status for Android:');
-        print('  Bluetooth Scan: $bluetoothScanGranted');
-        print('  Bluetooth Connect: $bluetoothConnectGranted');
-        print('  Location When In Use: $locationWhenInUseGranted');
+        
 
         if (bluetoothScanGranted && bluetoothConnectGranted && locationWhenInUseGranted) {
             _startScan();
         } else {
             // パーミッションが許可されなかった場合の処理
             WidgetsBinding.instance.addPostFrameCallback((_) {
-                _showSnackBar('Bluetoothおよび位置情報のパーミッションが必要です。設定から許可してください。', Colors.red);
+                if (!mounted) return;
+                _showSnackBar('Bluetoothおよび位置情報のパーミッションが必要です。設定から許可してください。', AppColors.errorColor);
             });
             if (!mounted) return;
             setState(() {
@@ -60,8 +60,7 @@ class _ParingPageState extends State<ParingPage> {
         // iOSの場合の位置情報パーミッションの要求結果をprintで出力
         final bool locationWhenInUseGranted = await Permission.locationWhenInUse.request().isGranted;
 
-        print('Permission Status for iOS:');
-        print('  Location When In Use: $locationWhenInUseGranted');
+        
 
         if (locationWhenInUseGranted) {
             // iOSでは位置情報パーミッションのみでBLEスキャンが可能（Info.plistの設定も重要）
@@ -69,7 +68,8 @@ class _ParingPageState extends State<ParingPage> {
         } else {
             // パーミッションが許可されなかった場合の処理
             WidgetsBinding.instance.addPostFrameCallback((_) {
-                _showSnackBar('位置情報のパーミッションが必要です。設定から許可してください。', Colors.red);
+                if (!mounted) return;
+                _showSnackBar('位置情報のパーミッションが必要です。設定から許可してください。', AppColors.errorColor);
             });
             if (!mounted) return;
             setState(() {
@@ -79,7 +79,8 @@ class _ParingPageState extends State<ParingPage> {
     } else {
       // その他のプラットフォーム（Web/Desktopなど）の一般的な処理
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _showSnackBar('このプラットフォームではBluetoothまたは位置情報パーミッションの自動要求はサポートされていません。', Colors.orange);
+        if (!mounted) return;
+        _showSnackBar('このプラットフォームではBluetoothまたは位置情報パーミッションの自動要求はサポートされていません。', AppColors.warningColor);
       });
       if (!mounted) return;
       setState(() {
@@ -139,9 +140,10 @@ class _ParingPageState extends State<ParingPage> {
     } catch (e) {
       if (!mounted) return;
       WidgetsBinding.instance.addPostFrameCallback((_) { // ここも遅延させる
-        _showSnackBar('スキャン開始中にエラーが発生しました: ${e.toString()}', Colors.red);
+        if (!mounted) return;
+        _showSnackBar('スキャン開始中にエラーが発生しました: ${e.toString()}', AppColors.errorColor);
       });
-      print('BLE Scan Start Error: $e'); // デバッグ用にコンソールに出力
+      
       setState(() {
         _isScanning = false; // エラー発生時はスキャン状態をリセット
       });
@@ -172,9 +174,9 @@ class _ParingPageState extends State<ParingPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F5EF),
+      backgroundColor: AppColors.backgroundColor,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF66B2A3),
+        backgroundColor: AppColors.primaryColor,
         title: const Text('ペアリング', style: TextStyle(color: Colors.white)), // タイトルを「ペアリング」に変更
         iconTheme: const IconThemeData(color: Colors.white),
       ),
@@ -194,7 +196,7 @@ class _ParingPageState extends State<ParingPage> {
               ) : const Icon(Icons.bluetooth_searching),
               label: Text(_isScanning ? 'スキャン中...' : 'デバイスをスキャン'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF66B2A3),
+                backgroundColor: AppColors.primaryColor,
                 foregroundColor: Colors.white,
                 minimumSize: const Size(double.infinity, 50), // ボタンの幅を最大にし、高さを設定
                 shape: RoundedRectangleBorder(
@@ -232,11 +234,11 @@ class _ParingPageState extends State<ParingPage> {
                   padding: const EdgeInsets.symmetric(vertical: 4.0),
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
+                      backgroundColor: AppColors.cardColor,
                       foregroundColor: Colors.black87,
                       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                       elevation: 2,
-                      side: const BorderSide(color: Colors.teal),
+                      side: const BorderSide(color: AppColors.cardBorderColor),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -246,7 +248,8 @@ class _ParingPageState extends State<ParingPage> {
                       final name = device['name'];
                       // 接続中のUIフィードバック
                       WidgetsBinding.instance.addPostFrameCallback((_) {
-                        _showSnackBar('$name に接続を試行中...', Colors.blue);
+                        if (!mounted) return;
+                        _showSnackBar('$name に接続を試行中...', AppColors.infoColor);
                       });
 
                       try {
@@ -254,9 +257,11 @@ class _ParingPageState extends State<ParingPage> {
                             BluetoothDevice(remoteId: DeviceIdentifier(id!));
 
                         // 既に接続済みか確認
+                        // ignore: await_only_futures
                         if (await bluetoothDevice.isConnected) {
                           WidgetsBinding.instance.addPostFrameCallback((_) {
-                            _showSnackBar('$name は既に接続済みです', Colors.orange);
+                            if (!mounted) return;
+                            _showSnackBar('$name は既に接続済みです', AppColors.warningColor);
                           });
                           if (!mounted) return;
                           Navigator.pop(context, {'id': id, 'name': name});
@@ -268,7 +273,8 @@ class _ParingPageState extends State<ParingPage> {
                         );
 
                         WidgetsBinding.instance.addPostFrameCallback((_) {
-                          _showSnackBar('$name に接続しました', Colors.green);
+                          if (!mounted) return;
+                          _showSnackBar('$name に接続しました', AppColors.successColor);
                         });
 
                         // 接続成功時にデバイス情報を main に返す
@@ -276,9 +282,10 @@ class _ParingPageState extends State<ParingPage> {
                         Navigator.pop(context, {'id': id, 'name': name});
                       } catch (e) {
                         WidgetsBinding.instance.addPostFrameCallback((_) {
-                          _showSnackBar('接続に失敗しました: ${e.toString()}', Colors.red);
+                          if (!mounted) return;
+                          _showSnackBar('接続に失敗しました: ${e.toString()}', AppColors.errorColor);
                         });
-                        print('Connection Error: $e'); // デバッグ用にエラーをコンソールに出力
+                        
                       }
                     },
                     child: Row(

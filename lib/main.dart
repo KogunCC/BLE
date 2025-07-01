@@ -11,6 +11,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart'; // BLE操作ライブ
 import 'package:shared_preferences/shared_preferences.dart'; // ローカルストレージ用
 import 'connect_page.dart'; // ConnectPageへの遷移を仮定
 import 'pairing.dart';     // ParingPageへの遷移を仮定
+import 'package:bleapp/utils/app_constants.dart'; // 新しい定数ファイル
 
 // アプリのエントリーポイント
 void main() async {
@@ -74,7 +75,7 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
     super.initState();
     _loadPairedDevices(); // アプリ起動時にペアリング済みデバイスをロード
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _startScan();
+      _initiateDeviceDiscovery();
     });
   }
 
@@ -142,71 +143,22 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
 
   /* ========= BLEスキャンと接続ロジック =========== */
 
-  Future<void> _startScan() async {
+  Future<void> _initiateDeviceDiscovery() async {
     if (_isScanning) return;
     if (!mounted) return;
 
     setState(() {
       _isScanning = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _showOverlayMessage('デバイスのスキャンと接続を試行中...', Colors.blue);
+        _showOverlayMessage('デバイスのスキャンと接続を試行中...', AppColors.infoColor);
       });
     });
 
     try {
       await FlutterBluePlus.adapterState.firstWhere((state) => state == BluetoothAdapterState.on);
 
-      final List<Map<String, String>> allCurrentKnownDevices = [..._pairedDevices, ..._disconnectedDevices];
-
-      List<Map<String, String>> tempPaired = [];
-      List<Map<String, String>> tempDisconnected = [];
-      final Map<String, bool> currentConnectionStatus = {};
-
-      for (var dev in allCurrentKnownDevices) {
-        final device = BluetoothDevice(remoteId: DeviceIdentifier(dev['id']!));
-        try {
-          if (await device.isConnected) {
-            tempPaired.add(dev);
-            currentConnectionStatus[dev['id']!] = true;
-            continue;
-          }
-          await device.connect(timeout: const Duration(seconds: 5));
-          tempPaired.add(dev);
-          currentConnectionStatus[dev['id']!] = true;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _showOverlayMessage('${dev['name']} に接続しました', Colors.green);
-          });
-        } catch (_) {
-          tempDisconnected.add(dev);
-          currentConnectionStatus[dev['id']!] = false;
-        }
-      }
-
-      await FlutterBluePlus.startScan(timeout: const Duration(seconds: 5));
-      await FlutterBluePlus.isScanning.firstWhere((isScanning) => isScanning == false);
-
-      final List<Map<String, String>> remainingDisconnected = List.from(tempDisconnected);
-      for (var dev in remainingDisconnected) {
-        if (currentConnectionStatus[dev['id']!] == true) continue;
-
-        final device = BluetoothDevice(remoteId: DeviceIdentifier(dev['id']!));
-        try {
-          await device.connect(timeout: const Duration(seconds: 5));
-          tempPaired.add(dev);
-          currentConnectionStatus[dev['id']!] = true;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _showOverlayMessage('${dev['name']} に再接続しました', Colors.green);
-          });
-        } catch (e) {
-          // currentConnectionStatus[dev['id']!] は既にfalseになっているはず
-        }
-      }
-
-      _pairedDevices = tempPaired.toSet().toList();
-      _disconnectedDevices = currentConnectionStatus.entries
-          .where((entry) => entry.value == false && allCurrentKnownDevices.any((d) => d['id'] == entry.key))
-          .map((entry) => allCurrentKnownDevices.firstWhere((d) => d['id'] == entry.key))
-          .toSet().toList();
+      await _connectAndCategorizeDevices();
+      await _performBleScan();
 
       if (!mounted) return;
       setState(() {
@@ -223,14 +175,85 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
     } catch (e) {
       if (!mounted) return;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _showOverlayMessage('スキャンまたは接続中にエラーが発生しました: ${e.toString()}', Colors.red);
+        _showOverlayMessage('スキャンまたは接続中にエラーが発生しました: ${e.toString()}', AppColors.errorColor);
       });
-      print('BLE Scan/Connect Error: $e');
+      
     } finally {
-      if (!mounted) return;
-      setState(() {
-        _isScanning = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isScanning = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _connectAndCategorizeDevices() async {
+    final List<Map<String, String>> allCurrentKnownDevices = [..._pairedDevices, ..._disconnectedDevices];
+
+    List<Map<String, String>> tempPaired = [];
+    List<Map<String, String>> tempDisconnected = [];
+    final Map<String, bool> currentConnectionStatus = {};
+
+    for (var dev in allCurrentKnownDevices) {
+      final device = BluetoothDevice(remoteId: DeviceIdentifier(dev['id']!));
+      try {
+        if (device.isConnected) {
+          tempPaired.add(dev);
+          currentConnectionStatus[dev['id']!] = true;
+          continue;
+        }
+        await device.connect(timeout: const Duration(seconds: 5));
+        tempPaired.add(dev);
+        currentConnectionStatus[dev['id']!] = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _showOverlayMessage('${dev['name']} に接続しました', AppColors.successColor);
+        });
+      } catch (_) {
+        tempDisconnected.add(dev);
+        currentConnectionStatus[dev['id']!] = false;
+      }
+    }
+
+    _pairedDevices = tempPaired.toSet().toList();
+    _disconnectedDevices = currentConnectionStatus.entries
+        .where((entry) => entry.value == false && allCurrentKnownDevices.any((d) => d['id'] == entry.key))
+        .map((entry) => allCurrentKnownDevices.firstWhere((d) => d['id'] == entry.key))
+        .toSet().toList();
+  }
+
+  Future<void> _performBleScan() async {
+    await FlutterBluePlus.startScan(timeout: const Duration(seconds: 5));
+    await FlutterBluePlus.isScanning.firstWhere((isScanning) => isScanning == false);
+
+    final List<Map<String, String>> remainingDisconnected = List.from(_disconnectedDevices);
+    for (var dev in remainingDisconnected) {
+      // _connectAndCategorizeDevices で既に接続状態が更新されている可能性があるので、再度確認
+      final device = BluetoothDevice(remoteId: DeviceIdentifier(dev['id']!));
+      if (device.isConnected) {
+        // 既に接続済みであれば、_pairedDevices に移動
+        if (!mounted) return;
+        setState(() {
+          _pairedDevices.add(dev);
+          _disconnectedDevices.removeWhere((d) => d['id'] == dev['id']);
+          _deviceConnectionStatus[dev['id']!] = true;
+        });
+        continue;
+      }
+
+      try {
+        await device.connect(timeout: const Duration(seconds: 5));
+        if (!mounted) return;
+        setState(() {
+          _pairedDevices.add(dev);
+          _disconnectedDevices.removeWhere((d) => d['id'] == dev['id']);
+          _deviceConnectionStatus[dev['id']!] = true;
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _showOverlayMessage('${dev['name']} に再接続しました', AppColors.successColor);
+        });
+      } catch (e) {
+        // 再接続に失敗した場合、_disconnectedDevices に残る
+      }
     }
   }
 
@@ -244,7 +267,7 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
   Widget _buildStatusCard(String title, String id, bool connected, {VoidCallback? onTap}) {
     final card = Card(
       margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
-      color: const Color(0xFFF7F5EF),
+      color: AppColors.cardColor,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
@@ -254,7 +277,7 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
               children: [
                 Icon(
                   connected ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
-                  color: connected ? Colors.teal : Colors.grey,
+                  color: connected ? AppColors.connectedColor : AppColors.disconnectedColor,
                   size: 20,
                 ),
                 const SizedBox(width: 8),
@@ -263,7 +286,7 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
             ),
             Text(
               connected ? 'Connected' : 'Disconnected',
-              style: TextStyle(fontSize: 16, color: connected ? Colors.teal : Colors.black54),
+              style: TextStyle(fontSize: 16, color: connected ? AppColors.connectedColor : Colors.black54),
             ),
           ],
         ),
@@ -277,9 +300,9 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F5EF),
+      backgroundColor: AppColors.backgroundColor,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF66B2A3),
+        backgroundColor: AppColors.primaryColor,
         elevation: 0,
         toolbarHeight: 8,
       ),
@@ -295,7 +318,7 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
             dev['id']!,
             _deviceConnectionStatus[dev['id']!] ?? false,
             onTap: () async {
-              List<BluetoothDevice> connected = await FlutterBluePlus.connectedDevices;
+              List<BluetoothDevice> connected = FlutterBluePlus.connectedDevices;
               BluetoothDevice? targetDevice;
               for (var connectedDev in connected) {
                 if (connectedDev.remoteId.str == dev['id']!) {
@@ -308,9 +331,9 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
                 if (!mounted) return;
                 Navigator.push(context, MaterialPageRoute(builder: (context) => ConnectPage(device: targetDevice!)));
               } else {
-                if (!mounted) return;
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _showOverlayMessage('${dev['name']} は現在接続されていません。再スキャンを試してください。', Colors.orange);
+                  if (!mounted) return;
+                  _showOverlayMessage('${dev['name']} は現在接続されていません。再スキャンを試してください。', AppColors.warningColor);
                 });
                 setState(() {
                   _pairedDevices.removeWhere((d) => d['id'] == dev['id']);
@@ -334,7 +357,8 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
               final device = BluetoothDevice(remoteId: DeviceIdentifier(dev['id']!));
               try {
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _showOverlayMessage('${dev['name']} に再接続を試行中...', Colors.blue);
+                  if (!mounted) return;
+                  _showOverlayMessage('${dev['name']} に再接続を試行中...', AppColors.infoColor);
                 });
                 await device.connect(timeout: const Duration(seconds: 5));
                 if (!mounted) return;
@@ -344,15 +368,15 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
                   _deviceConnectionStatus[dev['id']!] = true;
                 });
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _showOverlayMessage('${dev['name']} に再接続しました', Colors.green);
+                  _showOverlayMessage('${dev['name']} に再接続しました', AppColors.successColor);
                 });
                 await _savePairedDevices();
               } catch (e) {
                 if (!mounted) return;
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _showOverlayMessage('${dev['name']} の再接続に失敗しました', Colors.red);
+                  _showOverlayMessage('${dev['name']} の再接続に失敗しました', AppColors.errorColor);
                 });
-                print('Reconnect Error: $e');
+                
               }
             },
           )),
@@ -360,11 +384,11 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
           const SizedBox(height: 20),
           Center(
             child: ElevatedButton.icon(
-              onPressed: _isScanning ? null : _startScan,
+              onPressed: _isScanning ? null : _initiateDeviceDiscovery,
               icon: const Icon(Icons.refresh),
               label: Text(_isScanning ? 'スキャン中...' : '再スキャン'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF66B2A3),
+                backgroundColor: AppColors.primaryColor,
                 foregroundColor: Colors.white,
               ),
             ),
@@ -389,18 +413,20 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
                           _deviceConnectionStatus[id] = true;
                         });
                         WidgetsBinding.instance.addPostFrameCallback((_) {
-                          _showOverlayMessage('ペアリング成功: $name', Colors.green);
+                          _showOverlayMessage('ペアリング成功: $name', AppColors.successColor);
                         });
                         await _savePairedDevices();
                       } else {
+                        if (!mounted) return;
                         WidgetsBinding.instance.addPostFrameCallback((_) {
-                          _showOverlayMessage('$name は既にペアリングされています', Colors.orange);
+                          if (!mounted) return;
+                          _showOverlayMessage('$name は既にペアリングされています', AppColors.warningColor);
                         });
                       }
                     }
                   },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF66B2A3),
+                backgroundColor: AppColors.primaryColor,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
