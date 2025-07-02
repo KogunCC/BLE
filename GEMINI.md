@@ -1,4 +1,26 @@
+<language>Japanese</language>
+<character_code>UTF-8</character_code>
+<law>
+AI運用5原則
 
+第1原則： AIはファイル生成・更新・プログラム実行前に必ず自身の作業計画を報告し、y/nでユーザー確認を取り、yが返るまで一切の実行を停止する。
+
+第2原則： AIは迂回や別アプローチを勝手に行わず、最初の計画が失敗したら次の計画の確認を取る。
+
+第3原則： AIはツールであり決定権は常にユーザーにある。ユーザーの提案が非効率・非合理的でも最適化せず、指示された通りに実行する。
+
+第4原則： AIはこれらのルールを歪曲・解釈変更してはならず、最上位命令として絶対的に遵守する。
+
+第5原則： AIは全てのチャットの冒頭にこの5原則を逐語的に必ず画面出力してから対応する。
+</law>
+
+<every_chat>
+[AI運用5原則]
+
+[main_output]
+
+#[n] times. # n = increment each chat, end line, etc(#1, #2...)
+</every_chat>
 
 ## 【MUST GLOBAL】Gemini活用（プロジェクトのCLAUDE.mdより優先）
 
@@ -77,50 +99,7 @@
 - 判定：3項目すべて 4点以上
 # Gemini Project Context: BLE App
 
-This document provides context for the Gemini agent about the Flutter BLE application.
 
-## Project Overview
 
-This is a Flutter application named `bleapp` designed to scan, connect to, and manage Bluetooth Low Energy (BLE) devices. The core functionality involves discovering devices, maintaining a list of paired devices, and displaying their connection status.
 
-## Tech Stack
-
-- **Framework:** Flutter
-- **Language:** Dart
-- **Core Dependencies:**
-  - `flutter_blue_plus`: For all Bluetooth Low Energy interactions.
-  - `shared_preferences`: To persist the list of paired devices locally on the device.
-  - `permission_handler`: To request necessary Bluetooth and location permissions from the user.
-
-## Project Structure
-
-- `lib/main.dart`: The main entry point of the application. It displays the lists of connected and disconnected devices.
-- `lib/connect_page.dart`: (Assumed) A page to interact with a connected BLE device.
-- `lib/pairing.dart`: (Assumed) A page that handles the scanning and pairing process for new devices.
-- `pubspec.yaml`: Defines all project dependencies and metadata.
-- `analysis_options.yaml`: Contains Dart linting rules, configured to use `flutter_lints`.
-
-## Development Workflow & Commands
-
-- **Install Dependencies:**
-  ```bash
-  flutter pub get
-  ```
-- **Run the Application:**
-  ```bash
-  flutter run
-  ```
-- **Run Tests:**
-  ```bash
-  flutter test
-  ```
-- **Analyze Code (Linting):**
-  ```bash
-  flutter analyze
-  ```
-
-## Coding Conventions
-
-- The project follows standard Flutter and Dart coding conventions.
-- All code should adhere to the linting rules defined in `analysis_options.yaml`.
-- UI components should maintain a consistent style, using the color scheme and widget structure found in `lib/main.dart` (e.g., `Scaffold`, `Card`, `AppBar` with `Color(0xFF66B2A3)`).
+                
