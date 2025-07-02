@@ -1,5 +1,6 @@
 // ignore_for_file: use_build_context_synchronously
 import 'dart:async';
+import 'package:bleapp/models/paired_device.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart'; // パーミッションハンドリングのため追加
@@ -13,8 +14,8 @@ class ParingPage extends StatefulWidget {
 }
 
 class _ParingPageState extends State<ParingPage> {
-  // 検出されたデバイスのリスト（名前とIDを保持）
-  final List<Map<String, String>> _deviceList = [];
+  // 検出されたデバイスのリスト（PairedDeviceオブジェクトを保持）
+  final List<PairedDevice> _deviceList = [];
   // スキャン中かどうかを示すフラグ
   bool _isScanning = false;
   // スキャン結果の購読を管理するためのStreamSubscription
@@ -36,7 +37,6 @@ class _ParingPageState extends State<ParingPage> {
   Future<void> _checkPermissionsAndStartScan() async {
     // Android 12 (API 31) 以降では新しいBluetoothパーミッションが必要
     if (Theme.of(context).platform == TargetPlatform.android) {
-        // 各パーミッションの要求結果をprintで出力
         final bool bluetoothScanGranted = await Permission.bluetoothScan.request().isGranted;
         final bool bluetoothConnectGranted = await Permission.bluetoothConnect.request().isGranted;
         final bool locationWhenInUseGranted = await Permission.locationWhenInUse.request().isGranted;
@@ -110,18 +110,25 @@ class _ParingPageState extends State<ParingPage> {
       // スキャンを開始 (タイムアウトを5秒に設定)
       await FlutterBluePlus.startScan(timeout: const Duration(seconds: 5));
 
-      // スキャン結果を購読し、デバイスリストに追加
+      // スキャン結果の購読を一度だけ行い、見つかったデバイスを一括で処理する
       _scanResultsSubscription = FlutterBluePlus.onScanResults.listen((results) {
         if (!mounted) return;
-        setState(() {
-          for (var result in results) {
-            final device = result.device;
-            // platformNameが空でない場合のみデバイスを追加
-            // 'Unknown Device'という名前を割り当てる必要がなくなります
-            if (device.platformName.isNotEmpty && !_deviceList.any((d) => d['id'] == device.remoteId.str)) {
-              _deviceList.add({'name': device.platformName, 'id': device.remoteId.str});
-            }
+        
+        // 新しく見つかったデバイスのリストを一時的に作成
+        final List<PairedDevice> foundDevices = [];
+        for (var result in results) {
+          final device = result.device;
+          // platformNameが空でなく、まだリストにないデバイスのみを追加
+          if (device.platformName.isNotEmpty && 
+              !_deviceList.any((d) => d.id == device.remoteId.str) &&
+              !foundDevices.any((d) => d.id == device.remoteId.str)) {
+            foundDevices.add(PairedDevice(name: device.platformName, id: device.remoteId.str));
           }
+        }
+
+        // UIの更新は一度だけ行う
+        setState(() {
+          _deviceList.addAll(foundDevices);
         });
       });
 
@@ -244,27 +251,27 @@ class _ParingPageState extends State<ParingPage> {
                       ),
                     ),
                     onPressed: () async {
-                      final id = device['id'];
-                      final name = device['name'];
+                      final deviceToPair = device;
                       // 接続中のUIフィードバック
                       WidgetsBinding.instance.addPostFrameCallback((_) {
                         if (!mounted) return;
-                        _showSnackBar('$name に接続を試行中...', AppColors.infoColor);
+                        _showSnackBar('${deviceToPair.name} に接続を試行中...', AppColors.infoColor);
                       });
 
                       try {
                         final bluetoothDevice =
-                            BluetoothDevice(remoteId: DeviceIdentifier(id!));
+                            BluetoothDevice(remoteId: DeviceIdentifier(deviceToPair.id));
 
                         // 既に接続済みか確認
                         // ignore: await_only_futures
                         if (await bluetoothDevice.isConnected) {
                           WidgetsBinding.instance.addPostFrameCallback((_) {
                             if (!mounted) return;
-                            _showSnackBar('$name は既に接続済みです', AppColors.warningColor);
+                            _showSnackBar('${deviceToPair.name} は既に接続済みです', AppColors.warningColor);
                           });
                           if (!mounted) return;
-                          Navigator.pop(context, {'id': id, 'name': name});
+                          print('ペアリング画面からメイン画面へ返されるデバイス情報: ID=${deviceToPair.id}, 名前=${deviceToPair.name}');
+                          Navigator.pop(context, deviceToPair);
                           return;
                         }
 
@@ -274,12 +281,12 @@ class _ParingPageState extends State<ParingPage> {
 
                         WidgetsBinding.instance.addPostFrameCallback((_) {
                           if (!mounted) return;
-                          _showSnackBar('$name に接続しました', AppColors.successColor);
+                          _showSnackBar('${deviceToPair.name} に接続しました', AppColors.successColor);
                         });
 
                         // 接続成功時にデバイス情報を main に返す
                         if (!mounted) return;
-                        Navigator.pop(context, {'id': id, 'name': name});
+                        Navigator.pop(context, deviceToPair);
                       } catch (e) {
                         WidgetsBinding.instance.addPostFrameCallback((_) {
                           if (!mounted) return;
@@ -291,7 +298,7 @@ class _ParingPageState extends State<ParingPage> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Expanded(child: Text(device['name'] ?? '不明なデバイス')),
+                        Expanded(child: Text(device.name)),
                         const Icon(Icons.chevron_right, color: Colors.grey),
                       ],
                     ),

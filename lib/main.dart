@@ -6,6 +6,7 @@
 
 import 'dart:async';
 import 'dart:convert'; // JSONエンコード/デコード用
+import 'package:bleapp/models/paired_device.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart'; // BLE操作ライブラリ
 import 'package:shared_preferences/shared_preferences.dart'; // ローカルストレージ用
@@ -61,10 +62,7 @@ class BLEStatusScreen extends StatefulWidget {
 }
 
 class _BLEStatusScreenState extends State<BLEStatusScreen> {
-  // ペアリング済みのデバイスリスト。SharedPreferencesからロードされる。
-  List<Map<String, String>> _pairedDevices = [];
-  // 切断されたデバイスのリスト。スキャンによって接続できなかったデバイス。
-  List<Map<String, String>> _disconnectedDevices = [];
+  List<PairedDevice> _pairedDevices = [];
   // 現在スキャンが進行中かどうかを示すフラグ。UIの制御に使用。
   bool _isScanning = false;
   // 各デバイスの現在の接続状態をリアルタイムで追跡するマップ。
@@ -83,23 +81,40 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
 
   Future<void> _savePairedDevices() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('paired_devices', jsonEncode(_pairedDevices));
+    // PairedDeviceオブジェクトのリストをMapのリストに変換してからJSONにエンコード
+    final List<Map<String, dynamic>> data = _pairedDevices.map((device) => device.toJson()).toList();
+    await prefs.setString('paired_devices', jsonEncode(data));
+    print('SharedPreferencesに保存されるペアリング済みデバイス: $data');
   }
 
   Future<void> _loadPairedDevices() async {
     final prefs = await SharedPreferences.getInstance();
     final data = prefs.getString('paired_devices');
     if (data != null) {
-      final List decoded = jsonDecode(data);
+      final List<dynamic> decoded = jsonDecode(data);
       setState(() {
-        _pairedDevices = decoded.cast<Map<String, dynamic>>()
-            .map((d) => d.map((k, v) => MapEntry(k.toString(), v.toString())))
-            .toList();
+        // JSON MapのリストからPairedDeviceオブジェクトのリストを生成
+        _pairedDevices = decoded.map((item) => PairedDevice.fromJson(item)).toList();
         for (var dev in _pairedDevices) {
-          _deviceConnectionStatus[dev['id']!] = false;
+          _deviceConnectionStatus[dev.id] = false;
         }
+        print('SharedPreferencesからロードされたペアリング済みデバイス: $_pairedDevices');
       });
     }
+  }
+
+  // ペアリング情報をリセットする
+  Future<void> _resetPairedDevices() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('paired_devices'); // SharedPreferencesから情報を削除
+    if (!mounted) return;
+    setState(() {
+      // UIの状態をすべてリセット
+      _pairedDevices.clear();
+      _deviceConnectionStatus.clear();
+    });
+    _showOverlayMessage('すべてのペアリング情報がリセットされました', AppColors.infoColor);
+    print('ペアリング情報がリセットされました。');
   }
 
   /* ========= UI フィードバックのためのオーバーレイメッセージ =========== */
@@ -157,20 +172,20 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
     try {
       await FlutterBluePlus.adapterState.firstWhere((state) => state == BluetoothAdapterState.on);
 
-      await _connectAndCategorizeDevices();
+      // 既存のペアリング済みデバイスの接続状態を更新
+      await _updateDeviceConnectionStatus();
+
+      // 新しいデバイスのスキャンと接続
       await _performBleScan();
 
       if (!mounted) return;
       setState(() {
-        _deviceConnectionStatus.clear();
-        for (var dev in _pairedDevices) {
-          _deviceConnectionStatus[dev['id']!] = true;
-        }
-        for (var dev in _disconnectedDevices) {
-          _deviceConnectionStatus[dev['id']!] = false;
-        }
+        // _deviceConnectionStatus は _updateDeviceConnectionStatus と _performBleScan で更新されるため、ここではクリアしない
+        // UIの更新をトリガーするためにsetStateを呼び出す
       });
       await _savePairedDevices();
+
+      print('デバイス探索後の最終的なペアリング済みデバイス: $_pairedDevices');
 
     } catch (e) {
       if (!mounted) return;
@@ -187,79 +202,89 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
     }
   }
 
-  Future<void> _connectAndCategorizeDevices() async {
-    final List<Map<String, String>> allCurrentKnownDevices = [..._pairedDevices, ..._disconnectedDevices];
+  Future<void> _updateDeviceConnectionStatus() async {
+    final List<PairedDevice> currentPairedDevices = List.from(_pairedDevices);
+    final Map<String, bool> tempConnectionStatus = {};
 
-    List<Map<String, String>> tempPaired = [];
-    List<Map<String, String>> tempDisconnected = [];
-    final Map<String, bool> currentConnectionStatus = {};
-
-    for (var dev in allCurrentKnownDevices) {
-      final device = BluetoothDevice(remoteId: DeviceIdentifier(dev['id']!));
+    for (var dev in currentPairedDevices) {
+      final device = BluetoothDevice(remoteId: DeviceIdentifier(dev.id));
       try {
         if (device.isConnected) {
-          tempPaired.add(dev);
-          currentConnectionStatus[dev['id']!] = true;
-          continue;
+          tempConnectionStatus[dev.id] = true;
+        } else {
+          await device.connect(timeout: const Duration(seconds: 5));
+          tempConnectionStatus[dev.id] = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _showOverlayMessage('${dev.name} に再接続しました', AppColors.successColor);
+          });
         }
-        await device.connect(timeout: const Duration(seconds: 5));
-        tempPaired.add(dev);
-        currentConnectionStatus[dev['id']!] = true;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _showOverlayMessage('${dev['name']} に接続しました', AppColors.successColor);
-        });
       } catch (_) {
-        tempDisconnected.add(dev);
-        currentConnectionStatus[dev['id']!] = false;
+        tempConnectionStatus[dev.id] = false;
       }
     }
 
-    _pairedDevices = tempPaired.toSet().toList();
-    _disconnectedDevices = currentConnectionStatus.entries
-        .where((entry) => entry.value == false && allCurrentKnownDevices.any((d) => d['id'] == entry.key))
-        .map((entry) => allCurrentKnownDevices.firstWhere((d) => d['id'] == entry.key))
-        .toSet().toList();
+    if (!mounted) return;
+    setState(() {
+      _deviceConnectionStatus.clear();
+      _deviceConnectionStatus.addAll(tempConnectionStatus);
+    });
   }
 
   Future<void> _performBleScan() async {
+    // スキャンを開始し、5秒後に停止
     await FlutterBluePlus.startScan(timeout: const Duration(seconds: 5));
+    // スキャンが停止するまで待機
     await FlutterBluePlus.isScanning.firstWhere((isScanning) => isScanning == false);
+  }
 
-    final List<Map<String, String>> remainingDisconnected = List.from(_disconnectedDevices);
-    for (var dev in remainingDisconnected) {
-      // _connectAndCategorizeDevices で既に接続状態が更新されている可能性があるので、再度確認
-      final device = BluetoothDevice(remoteId: DeviceIdentifier(dev['id']!));
-      if (device.isConnected) {
-        // 既に接続済みであれば、_pairedDevices に移動
-        if (!mounted) return;
-        setState(() {
-          _pairedDevices.add(dev);
-          _disconnectedDevices.removeWhere((d) => d['id'] == dev['id']);
-          _deviceConnectionStatus[dev['id']!] = true;
-        });
-        continue;
-      }
-
-      try {
-        await device.connect(timeout: const Duration(seconds: 5));
-        if (!mounted) return;
-        setState(() {
-          _pairedDevices.add(dev);
-          _disconnectedDevices.removeWhere((d) => d['id'] == dev['id']);
-          _deviceConnectionStatus[dev['id']!] = true;
-        });
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _showOverlayMessage('${dev['name']} に再接続しました', AppColors.successColor);
-        });
-      } catch (e) {
-        // 再接続に失敗した場合、_disconnectedDevices に残る
-      }
-    }
+  // リセット確認ダイアログを表示する
+  Future<void> _showResetConfirmationDialog() async {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false, // ダイアログ外をタップしても閉じない
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('確認'),
+          content: const SingleChildScrollView(
+            child: ListBody(
+              children: <Widget>[
+                Text('すべてのペアリング情報が削除されます。'),
+                Text('よろしいですか？'),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('キャンセル'),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            TextButton(
+              child: const Text('リセット', style: TextStyle(color: Colors.red)),
+              onPressed: () {
+                Navigator.of(context).pop(); // ダイアログを閉じる
+                _resetPairedDevices();      // リセット処理を実行
+              },
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
   void dispose() {
     super.dispose();
+  }
+
+  String _generateUniqueDeviceName(String baseName) {
+    String name = baseName;
+    int count = 1;
+    final existingNames = _pairedDevices.map((d) => d.name).toSet();
+    while (existingNames.contains(name)) {
+      name = '$baseName ($count)';
+      count++;
+    }
+    return name;
   }
 
   /* ========= デバイスステータス表示カードのビルド =========== */
@@ -273,17 +298,27 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Row(
-              children: [
-                Icon(
-                  connected ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
-                  color: connected ? AppColors.connectedColor : AppColors.disconnectedColor,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              ],
+            Expanded( // 1. 左側のセクションをExpandedでラップして、利用可能なスペースを埋めるようにする
+              child: Row(
+                children: [
+                  Icon(
+                    connected ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
+                    color: connected ? AppColors.connectedColor : AppColors.disconnectedColor,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded( // 2. デバイス名のTextウィジェットをExpandedでラップ
+                    child: Text(
+                      title,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      overflow: TextOverflow.ellipsis, // 3. はみ出したテキストを「...」で省略
+                      softWrap: false, // 4. テキストを折り返さないように設定
+                    ),
+                  ),
+                ],
+              ),
             ),
+            const SizedBox(width: 8), // 5. 左右のセクション間にスペースを追加
             Text(
               connected ? 'Connected' : 'Disconnected',
               style: TextStyle(fontSize: 16, color: connected ? AppColors.connectedColor : Colors.black54),
@@ -299,6 +334,16 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // デバッグ用に接続済み・切断済みデバイスのリストをフィルタリングして作成
+    final connected = _pairedDevices
+        .where((dev) => _deviceConnectionStatus[dev.id] == true)
+        .toList();
+    final disconnected = _pairedDevices
+        .where((dev) => _deviceConnectionStatus[dev.id] != true)
+        .toList();
+    print('【デバッグ】接続済みデバイス: ${connected.map((d) => d.toJson())}');
+    print('【デバッグ】切断済みデバイス: ${disconnected.map((d) => d.toJson())}');
+
     return Scaffold(
       backgroundColor: AppColors.backgroundColor,
       appBar: AppBar(
@@ -306,22 +351,24 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
         elevation: 0,
         toolbarHeight: 8,
       ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      body: ListView(
+        padding: const EdgeInsets.only(bottom: 100), // フローティングボタンとの重なりを避ける
         children: [
           const Padding(
             padding: EdgeInsets.only(left: 16, top: 24, bottom: 8),
             child: Text('接続済み', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
           ),
-          ..._pairedDevices.map((dev) => _buildStatusCard(
-            dev['name']!,
-            dev['id']!,
-            _deviceConnectionStatus[dev['id']!] ?? false,
+          ..._pairedDevices
+              .where((dev) => _deviceConnectionStatus[dev.id] == true)
+              .map((dev) => _buildStatusCard(
+            dev.name,
+            dev.id,
+            _deviceConnectionStatus[dev.id] ?? false,
             onTap: () async {
               List<BluetoothDevice> connected = FlutterBluePlus.connectedDevices;
               BluetoothDevice? targetDevice;
               for (var connectedDev in connected) {
-                if (connectedDev.remoteId.str == dev['id']!) {
+                if (connectedDev.remoteId.str == dev.id) {
                   targetDevice = connectedDev;
                   break;
                 }
@@ -333,12 +380,10 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
               } else {
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (!mounted) return;
-                  _showOverlayMessage('${dev['name']} は現在接続されていません。再スキャンを試してください。', AppColors.warningColor);
+                  _showOverlayMessage('${dev.name} は現在接続されていません。再スキャンを試してください。', AppColors.warningColor);
                 });
                 setState(() {
-                  _pairedDevices.removeWhere((d) => d['id'] == dev['id']);
-                  _disconnectedDevices.add(dev);
-                  _deviceConnectionStatus[dev['id']!] = false;
+                  _deviceConnectionStatus[dev.id] = false;
                 });
                 await _savePairedDevices();
               }
@@ -349,34 +394,35 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
             padding: EdgeInsets.only(left: 16, top: 24, bottom: 8),
             child: Text('接続が切れたデバイス', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
           ),
-          ..._disconnectedDevices.map((dev) => _buildStatusCard(
-            dev['name']!,
-            dev['id']!,
-            _deviceConnectionStatus[dev['id']!] ?? false,
+          ..._pairedDevices
+              .where((dev) => _deviceConnectionStatus[dev.id] != true)
+              .map((dev) => _buildStatusCard(
+            dev.name,
+            dev.id,
+            _deviceConnectionStatus[dev.id] ?? false,
             onTap: () async {
-              final device = BluetoothDevice(remoteId: DeviceIdentifier(dev['id']!));
+              final device = BluetoothDevice(remoteId: DeviceIdentifier(dev.id));
               try {
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (!mounted) return;
-                  _showOverlayMessage('${dev['name']} に再接続を試行中...', AppColors.infoColor);
+                  _showOverlayMessage('${dev.name} に再接続を試行中...', AppColors.infoColor);
                 });
                 await device.connect(timeout: const Duration(seconds: 5));
                 if (!mounted) return;
                 setState(() {
-                  _pairedDevices.add(dev);
-                  _disconnectedDevices.removeWhere((d) => d['id'] == dev['id']);
-                  _deviceConnectionStatus[dev['id']!] = true;
+                  _deviceConnectionStatus[dev.id] = true;
                 });
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _showOverlayMessage('${dev['name']} に再接続しました', AppColors.successColor);
+                  _showOverlayMessage('${dev.name} に再接続しました', AppColors.successColor);
                 });
                 await _savePairedDevices();
               } catch (e) {
                 if (!mounted) return;
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _showOverlayMessage('${dev['name']} の再接続に失敗しました', AppColors.errorColor);
+                  _showOverlayMessage('${dev.name} の再接続に失敗しました', AppColors.errorColor);
                 });
-                
+                // 再接続に失敗した場合、_deviceConnectionStatus は false のまま
+                setState(() {});
               }
             },
           )),
@@ -393,47 +439,65 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
               ),
             ),
           ),
-          const Spacer(),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isScanning ? null : () async {
-                    final result = await Navigator.pushNamed(context, '/paring');
-                    if (result is Map<String, String>) {
-                      final id = result['id']!;
-                      final name = result['name']!;
-                      if (!_pairedDevices.any((d) => d['id'] == id)) {
-                        if (!mounted) return;
-                        setState(() {
-                          _pairedDevices.add({'id': id, 'name': name});
-                          _disconnectedDevices.removeWhere((d) => d['id'] == id);
-                          _deviceConnectionStatus[id] = true;
-                        });
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          _showOverlayMessage('ペアリング成功: $name', AppColors.successColor);
-                        });
-                        await _savePairedDevices();
-                      } else {
-                        if (!mounted) return;
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (!mounted) return;
-                          _showOverlayMessage('$name は既にペアリングされています', AppColors.warningColor);
-                        });
-                      }
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primaryColor,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
+          const SizedBox(height: 20),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _isScanning
+                    ? null
+                    : () async {
+                        final result = await Navigator.pushNamed(context, '/paring');
+                        print('ペアリング画面から返された結果: $result');
+                        if (result is PairedDevice) {
+                          if (!_pairedDevices.any((d) => d.id == result.id)) {
+                            if (!mounted) return;
+                            // 接続前にユニークな名前を生成
+                            final uniqueName = _generateUniqueDeviceName(result.name);
+                            setState(() {
+                              _pairedDevices.add(PairedDevice(id: result.id, name: uniqueName));
+                              _deviceConnectionStatus[result.id] = true;
+                            });
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              _showOverlayMessage('ペアリング成功: $uniqueName', AppColors.successColor);
+                            });
+                            await _savePairedDevices();
+                          } else {
+                            if (!mounted) return;
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (!mounted) return;
+                              _showOverlayMessage(
+                                  '${result.name} は既にペアリングされています', AppColors.warningColor);
+                            });
+                          }
+                        }
+                      },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primaryColor,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Text('ペアリング画面へ', style: TextStyle(fontSize: 16)),
+                ),
+                child: const Text('ペアリング画面へ', style: TextStyle(fontSize: 16)),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10), // ボタン間のスペース
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.delete_forever, color: Colors.white),
+                label: const Text('ペアリング情報をリセット', style: TextStyle(fontSize: 16, color: Colors.white)),
+                onPressed: _showResetConfirmationDialog, // 確認ダイアログを表示
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.errorColor, // 注意を引く色
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
               ),
             ),
@@ -443,3 +507,4 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
     );
   }
 }
+
