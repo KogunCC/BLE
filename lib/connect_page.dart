@@ -1,3 +1,6 @@
+// conect_page.dart
+//RSSIの取得と表示、通知のオン/オフ切り替え、接続状態の監視を行う
+
 import 'dart:async';
 import 'dart:math'; // pow 関数を使用するためにインポート
 import 'package:flutter/material.dart';

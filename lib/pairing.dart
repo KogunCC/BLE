@@ -1,9 +1,12 @@
-// ignore_for_file: use_build_context_synchronously
-import 'dart:async';
-import 'package:bleapp/models/paired_device.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'package:permission_handler/permission_handler.dart'; // パーミッションハンドリングのため追加
+// ParingPage.dart
+//// BLEデバイスのペアリングを行うページ
+// ユーザーがBLEデバイスをスキャンし、接続するためのページです。
+// パーミッションのチェック、スキャンの開始、デバイスのリスト表示、接続処理を行います。
+import 'dart:async';// Dartの非同期処理用
+import 'package:bleapp/models/paired_device.dart'; // PairedDeviceモデルをインポート
+import 'package:flutter/material.dart';// Flutterの基本ウィジェットライブラリ
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';// BLE操作ライブラリ
+import 'package:permission_handler/permission_handler.dart'; // パーミッションハンドリング
 import 'package:bleapp/utils/app_constants.dart';
 
 class ParingPage extends StatefulWidget {

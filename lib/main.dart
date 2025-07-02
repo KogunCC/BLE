@@ -1,13 +1,10 @@
 // main.dart: BLEデバイスの接続状態を管理し、UIに表示するメイン画面
-// ✅ Flutter BLE デバイス接続管理（アイコン表示 + SharedPreferences 永続化）
-// ✅ Overlayエラー修正済み
-// ✅ ConnectPageへのBluetoothDeviceインスタンスの受け渡しに関する改善点をコメントで提示
-// ✅ FlutterBluePlusのiOSオプション（restoreIdentifierKey）を設定 (BluetoothAdapterOptionsの代替)
+
 
 import 'dart:async';
 import 'dart:convert'; // JSONエンコード/デコード用
-import 'package:bleapp/models/paired_device.dart';
-import 'package:flutter/material.dart';
+import 'package:bleapp/models/paired_device.dart';// PairedDeviceモデルをインポート
+import 'package:flutter/material.dart';// Flutterの基本ウィジェットライブラリ
 import 'package:flutter_blue_plus/flutter_blue_plus.dart'; // BLE操作ライブラリ
 import 'package:shared_preferences/shared_preferences.dart'; // ローカルストレージ用
 import 'connect_page.dart'; // ConnectPageへの遷移を仮定
@@ -21,11 +18,6 @@ void main() async {
 
   // ⭐ FlutterBluePlusのオプション設定 ⭐
   // 'BluetoothAdapterOptions'が未定義エラーになるため、
-  // setOptionsを引数なしで呼び出す形式に修正します。
-  // これによりAPI MISUSE警告は残る可能性がありますが、
-  // アプリがクラッシュせずに起動し、他の問題（特に位置情報パーミッション）の
-  // 解決に集中できるようになります。
-  //
   // もし将来的に restoreIdentifierKey を設定する必要が出た場合、
   // flutter_blue_plus の最新ドキュメントや CHANGELOG を参照し、
   // 正しい setOptions の引数形式を確認する必要があります。
@@ -35,7 +27,6 @@ void main() async {
   runApp(const MyApp());
 }
 
-// (以下のコードは変更なし)
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
