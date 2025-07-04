@@ -168,8 +168,12 @@
       "command-palette:Open command palette": false
     }
   },
-  "active": "9f45fcd1f2cbe743",
+  "active": "526c1f6ac41edf61",
   "lastOpenFiles": [
+    "build/ios/Debug-iphoneos/Runner.app/Runner.cstemp",
+    "build/ios/Debug-iphoneos/Runner.app/__preview.dylib.cstemp",
+    "build/ios/Debug-iphoneos/Runner.app/Runner.debug.dylib.cstemp",
+    "build/ios/Debug-iphoneos/App.framework/App.cstemp",
     "GEMINI.md",
     "knowladge.md"
   ]
