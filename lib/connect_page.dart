@@ -2,7 +2,9 @@
 //RSSIの取得と表示、通知のオン/オフ切り替え、接続状態の監視を行う
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:math'; // pow 関数を使用するためにインポート
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:bleapp/utils/app_constants.dart';
@@ -177,22 +179,8 @@ class _ConnectPageState extends State<ConnectPage> {
     return distance.toStringAsFixed(2); // 小数第2位まで表示
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.backgroundColor,
-      appBar: AppBar(
-        title: const Text('接続状態', style: TextStyle(color: Colors.white)),
-        backgroundColor: AppColors.primaryColor,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white), // アイコンの色も白に
-          onPressed: () {
-            // 前の画面に戻る（main.dartのMyAppを再生成しない）
-            Navigator.pop(context);
-          },
-        ),
-      ),
-      body: Center(
+  Widget _buildBody() {
+    return Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
           child: Column(
@@ -234,42 +222,92 @@ class _ConnectPageState extends State<ConnectPage> {
                     color: (_rssi != null && _deviceName != '接続されたデバイスがありません (未接続)') ? AppColors.textColor : AppColors.errorColor), // 未接続なら赤色
               ),
               const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: _toggleNotification,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor:
-                      _notificationOn ? AppColors.successColor : AppColors.disconnectedColor,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+              if (Platform.isIOS)
+                CupertinoButton(
+                  onPressed: _toggleNotification,
+                  color: _notificationOn ? CupertinoColors.activeGreen : CupertinoColors.destructiveRed,
+                  child: Text(
+                    _notificationOn ? '通知をOFFにする' : '通知をONにする',
+                    style: const TextStyle(fontSize: 18, color: Colors.white),
+                  ),
+                )
+              else
+                ElevatedButton(
+                  onPressed: _toggleNotification,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor:
+                        _notificationOn ? AppColors.successColor : AppColors.disconnectedColor,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: Text(
+                    _notificationOn ? '通知をOFFにする' : '通知をONにする',
+                    style: const TextStyle(fontSize: 18, color: Colors.white),
                   ),
                 ),
-                child: Text(
-                  _notificationOn ? '通知をOFFにする' : '通知をONにする',
-                  style: const TextStyle(fontSize: 18, color: Colors.white),
-                ),
-              ),
               const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: _startRssiMonitoring, // 再スキャンではなくRSSI監視を再開
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.accentColor,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+              if (Platform.isIOS)
+                CupertinoButton(
+                  onPressed: _startRssiMonitoring,
+                  color: CupertinoColors.activeBlue,
+                  child: const Text(
+                    'RSSIを更新',
+                    style: TextStyle(fontSize: 18, color: Colors.white),
+                  ),
+                )
+              else
+                ElevatedButton(
+                  onPressed: _startRssiMonitoring, // 再スキャンではなくRSSI監視を再開
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.accentColor,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    'RSSIを更新', // テキストを「RSSIを更新」に変更
+                    style: TextStyle(fontSize: 18, color: Colors.white),
                   ),
                 ),
-                child: const Text(
-                  'RSSIを更新', // テキストを「RSSIを更新」に変更
-                  style: TextStyle(fontSize: 18, color: Colors.white),
-                ),
-              ),
             ],
           ),
         ),
-      ),
-    );
+      );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (Platform.isIOS) {
+      return CupertinoPageScaffold(
+        navigationBar: CupertinoNavigationBar(
+          middle: const Text('接続状態'),
+          leading: CupertinoNavigationBarBackButton(
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
+        child: _buildBody(),
+      );
+    } else {
+      return Scaffold(
+        backgroundColor: AppColors.backgroundColor,
+        appBar: AppBar(
+          title: const Text('接続状態', style: TextStyle(color: Colors.white)),
+          backgroundColor: AppColors.primaryColor,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.white), // アイコンの色も白に
+            onPressed: () {
+              // 前の画面に戻る（main.dartのMyAppを再生成しない）
+              Navigator.pop(context);
+            },
+          ),
+        ),
+        body: _buildBody(),
+      );
+    }
   }
 }

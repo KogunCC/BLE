@@ -3,9 +3,13 @@
 
 import 'dart:async';
 import 'dart:convert'; // JSONエンコード/デコード用
+import 'dart:io'; // プラットフォーム判定のため
 import 'package:bleapp/models/paired_device.dart';// PairedDeviceモデルをインポート
+import 'package:bleapp/utils/theme_manager.dart';
+import 'package:flutter/cupertino.dart'; // Cupertinoデザインのため
 import 'package:flutter/material.dart';// Flutterの基本ウィジェットライブラリ
 import 'package:flutter_blue_plus/flutter_blue_plus.dart'; // BLE操作ライブラリ
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // ローカルストレージ用
 import 'connect_page.dart'; // ConnectPageへの遷移を仮定
 import 'pairing.dart';     // ParingPageへの遷移を仮定
@@ -24,7 +28,12 @@ void main() async {
   FlutterBluePlus.setOptions(); // 引数なしで呼び出す形式
 
   // アプリケーションを実行
-  runApp(const MyApp());
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => ThemeManager(),
+      child: const MyApp(),
+    ),
+  );
 }
 
 
@@ -33,14 +42,32 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'BLE Status', // アプリのタイトル
-      home: const BLEStatusScreen(), // アプリのホーム画面
-      debugShowCheckedModeBanner: false, // デバッグバナーを非表示
-      routes: {
-        '/paring': (context) => const ParingPage(), // ペアリング画面へのルート定義
-      },
-    );
+    final themeManager = Provider.of<ThemeManager>(context);
+    if (Platform.isIOS) {
+      return CupertinoApp(
+        title: 'BLE Status', // アプリのタイトル
+        theme: CupertinoThemeData(
+          brightness: themeManager.themeMode == ThemeMode.dark ? Brightness.dark : Brightness.light,
+        ),
+        home: const BLEStatusScreen(), // アプリのホーム画面
+        debugShowCheckedModeBanner: false, // デバッグバナーを非表示
+        routes: {
+          '/paring': (context) => const ParingPage(), // ペアリング画面へのルート定義
+        },
+      );
+    } else {
+      return MaterialApp(
+        title: 'BLE Status', // アプリのタイトル
+        theme: ThemeData.light(),
+        darkTheme: ThemeData.dark(),
+        themeMode: themeManager.themeMode,
+        home: const BLEStatusScreen(), // アプリのホーム画面
+        debugShowCheckedModeBanner: false, // デバッグバナーを非表示
+        routes: {
+          '/paring': (context) => const ParingPage(), // ペアリング画面へのルート定義
+        },
+      );
+    }
   }
 }
 
@@ -104,7 +131,9 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
       _pairedDevices.clear();
       _deviceConnectionStatus.clear();
     });
-    _showOverlayMessage('すべてのペアリング情報がリセットされました', AppColors.infoColor);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _showOverlayMessage('すべてのペアリング情報がリセットされました', AppColors.infoColor);
+    });
     print('ペアリング情報がリセットされました。');
   }
 
@@ -323,179 +352,200 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
 
   /* ========= UIレイアウトのビルド =========== */
 
-  @override
-  Widget build(BuildContext context) {
-    // デバッグ用に接続済み・切断済みデバイスのリストをフィルタリングして作成
-    final connected = _pairedDevices
-        .where((dev) => _deviceConnectionStatus[dev.id] == true)
-        .toList();
-    final disconnected = _pairedDevices
-        .where((dev) => _deviceConnectionStatus[dev.id] != true)
-        .toList();
-    print('【デバッグ】接続済みデバイス: ${connected.map((d) => d.toJson())}');
-    print('【デバッグ】切断済みデバイス: ${disconnected.map((d) => d.toJson())}');
-
-    return Scaffold(
-      backgroundColor: AppColors.backgroundColor,
-      appBar: AppBar(
-        backgroundColor: AppColors.primaryColor,
-        elevation: 0,
-        toolbarHeight: 8,
-      ),
-      body: ListView(
-        padding: const EdgeInsets.only(bottom: 100), // フローティングボタンとの重なりを避ける
-        children: [
-          const Padding(
-            padding: EdgeInsets.only(left: 16, top: 24, bottom: 8),
-            child: Text('接続済み', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-          ),
-          ..._pairedDevices
-              .where((dev) => _deviceConnectionStatus[dev.id] == true)
-              .map((dev) => _buildStatusCard(
-            dev.name,
-            dev.id,
-            _deviceConnectionStatus[dev.id] ?? false,
-            onTap: () async {
-              List<BluetoothDevice> connected = FlutterBluePlus.connectedDevices;
-              BluetoothDevice? targetDevice;
-              for (var connectedDev in connected) {
-                if (connectedDev.remoteId.str == dev.id) {
-                  targetDevice = connectedDev;
-                  break;
-                }
-              }
-
-              if (targetDevice != null) {
-                if (!mounted) return;
-                Navigator.push(context, MaterialPageRoute(builder: (context) => ConnectPage(device: targetDevice!)));
-              } else {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (!mounted) return;
-                  _showOverlayMessage('${dev.name} は現在接続されていません。再スキャンを試してください。', AppColors.warningColor);
-                });
-                setState(() {
-                  _deviceConnectionStatus[dev.id] = false;
-                });
-                await _savePairedDevices();
-              }
-            },
-          )),
-
-          const Padding(
-            padding: EdgeInsets.only(left: 16, top: 24, bottom: 8),
-            child: Text('接続が切れたデバイス', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-          ),
-          ..._pairedDevices
-              .where((dev) => _deviceConnectionStatus[dev.id] != true)
-              .map((dev) => _buildStatusCard(
-            dev.name,
-            dev.id,
-            _deviceConnectionStatus[dev.id] ?? false,
-            onTap: () async {
-              final device = BluetoothDevice(remoteId: DeviceIdentifier(dev.id));
-              try {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (!mounted) return;
-                  _showOverlayMessage('${dev.name} に再接続を試行中...', AppColors.infoColor);
-                });
-                await device.connect(timeout: const Duration(seconds: 5));
-                if (!mounted) return;
-                setState(() {
-                  _deviceConnectionStatus[dev.id] = true;
-                });
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _showOverlayMessage('${dev.name} に再接続しました', AppColors.successColor);
-                });
-                await _savePairedDevices();
-              } catch (e) {
-                if (!mounted) return;
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _showOverlayMessage('${dev.name} の再接続に失敗しました', AppColors.errorColor);
-                });
-                // 再接続に失敗した場合、_deviceConnectionStatus は false のまま
-                setState(() {});
-              }
-            },
-          )),
-
-          const SizedBox(height: 20),
-          Center(
-            child: ElevatedButton.icon(
-              onPressed: _isScanning ? null : _initiateDeviceDiscovery,
-              icon: const Icon(Icons.refresh),
-              label: Text(_isScanning ? 'スキャン中...' : '再スキャン'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primaryColor,
-                foregroundColor: Colors.white,
-              ),
+  Widget _buildBody() {
+    return SafeArea(
+      child: ListView(
+          padding: const EdgeInsets.only(bottom: 100), // フローティングボタンとの重なりを避ける
+          children: [
+            const Padding(
+              padding: EdgeInsets.only(left: 16, top: 24, bottom: 8),
+              child: Text('接続済み', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             ),
-          ),
-          const SizedBox(height: 20),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _isScanning
-                    ? null
-                    : () async {
-                        final result = await Navigator.pushNamed(context, '/paring');
-                        print('ペアリング画面から返された結果: $result');
-                        if (result is PairedDevice) {
-                          if (!_pairedDevices.any((d) => d.id == result.id)) {
-                            if (!mounted) return;
-                            // 接続前にユニークな名前を生成
-                            final uniqueName = _generateUniqueDeviceName(result.name);
-                            setState(() {
-                              _pairedDevices.add(PairedDevice(id: result.id, name: uniqueName));
-                              _deviceConnectionStatus[result.id] = true;
-                            });
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              _showOverlayMessage('ペアリング成功: $uniqueName', AppColors.successColor);
-                            });
-                            await _savePairedDevices();
-                          } else {
-                            if (!mounted) return;
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (!mounted) return;
-                              _showOverlayMessage(
-                                  '${result.name} は既にペアリングされています', AppColors.warningColor);
-                            });
-                          }
-                        }
-                      },
+            ..._pairedDevices
+                .where((dev) => _deviceConnectionStatus[dev.id] == true)
+                .map((dev) => _buildStatusCard(
+              dev.name,
+              dev.id,
+              _deviceConnectionStatus[dev.id] ?? false,
+              onTap: () async {
+                List<BluetoothDevice> connected = FlutterBluePlus.connectedDevices;
+                BluetoothDevice? targetDevice;
+                for (var connectedDev in connected) {
+                  if (connectedDev.remoteId.str == dev.id) {
+                    targetDevice = connectedDev;
+                    break;
+                  }
+                }
+
+                if (targetDevice != null) {
+                  if (!mounted) return;
+                  Navigator.push(context, MaterialPageRoute(builder: (context) => ConnectPage(device: targetDevice!)));
+                } else {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!mounted) return;
+                    _showOverlayMessage('${dev.name} は現在接続されていません。再スキャンを試してください。', AppColors.warningColor);
+                  });
+                  setState(() {
+                    _deviceConnectionStatus[dev.id] = false;
+                  });
+                  await _savePairedDevices();
+                }
+              },
+            )),
+
+            const Padding(
+              padding: EdgeInsets.only(left: 16, top: 24, bottom: 8),
+              child: Text('接続が切れたデバイス', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            ),
+            ..._pairedDevices
+                .where((dev) => _deviceConnectionStatus[dev.id] != true)
+                .map((dev) => _buildStatusCard(
+              dev.name,
+              dev.id,
+              _deviceConnectionStatus[dev.id] ?? false,
+              onTap: () async {
+                final device = BluetoothDevice(remoteId: DeviceIdentifier(dev.id));
+                try {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!mounted) return;
+                    _showOverlayMessage('${dev.name} に再接続を試行中...', AppColors.infoColor);
+                  });
+                  await device.connect(timeout: const Duration(seconds: 5));
+                  if (!mounted) return;
+                  setState(() {
+                    _deviceConnectionStatus[dev.id] = true;
+                  });
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _showOverlayMessage('${dev.name} に再接続しました', AppColors.successColor);
+                  });
+                  await _savePairedDevices();
+                } catch (e) {
+                  if (!mounted) return;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _showOverlayMessage('${dev.name} の再接続に失敗しました', AppColors.errorColor);
+                  });
+                  // 再接続に失敗した場合、_deviceConnectionStatus は false のまま
+                  setState(() {});
+                }
+              },
+            )),
+
+            const SizedBox(height: 20),
+            Center(
+              child: ElevatedButton.icon(
+                onPressed: _isScanning ? null : _initiateDeviceDiscovery,
+                icon: const Icon(Icons.refresh),
+                label: Text(_isScanning ? 'スキャン中...' : '再スキャン'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primaryColor,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _isScanning
+                      ? null
+                      : () async {
+                          final result = await Navigator.pushNamed(context, '/paring');
+                          print('ペアリング画面から返された結果: $result');
+                          if (result is PairedDevice) {
+                            if (!_pairedDevices.any((d) => d.id == result.id)) {
+                              if (!mounted) return;
+                              // 接続前にユニークな名前を生成
+                              final uniqueName = _generateUniqueDeviceName(result.name);
+                              setState(() {
+                                _pairedDevices.add(PairedDevice(id: result.id, name: uniqueName));
+                                _deviceConnectionStatus[result.id] = true;
+                              });
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                _showOverlayMessage('ペアリング成功: $uniqueName', AppColors.successColor);
+                              });
+                              await _savePairedDevices();
+                            } else {
+                              if (!mounted) return;
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (!mounted) return;
+                                _showOverlayMessage(
+                                    '${result.name} は既にペアリングされています', AppColors.warningColor);
+                              });
+                            }
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primaryColor,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text('ペアリング画面へ', style: TextStyle(fontSize: 16)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10), // ボタン間のスペース
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.delete_forever, color: Colors.white),
+                  label: const Text('ペアリング情報をリセット', style: TextStyle(fontSize: 16, color: Colors.white)),
+                  onPressed: _showResetConfirmationDialog, // 確認ダイアログを表示
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.errorColor, // 注意を引く色
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
-                child: const Text('ペアリング画面へ', style: TextStyle(fontSize: 16)),
               ),
             ),
-          ),
-          const SizedBox(height: 10), // ボタン間のスペース
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.delete_forever, color: Colors.white),
-                label: const Text('ペアリング情報をリセット', style: TextStyle(fontSize: 16, color: Colors.white)),
-                onPressed: _showResetConfirmationDialog, // 確認ダイアログを表示
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.errorColor, // 注意を引く色
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
+          ],
+        ),
     );
   }
-}
 
+  @override
+  Widget build(BuildContext context) {
+    final themeManager = Provider.of<ThemeManager>(context);
+    if (Platform.isIOS) {
+      return CupertinoPageScaffold(
+        navigationBar: CupertinoNavigationBar(
+          middle: const Text('BLE Status'),
+          trailing: CupertinoButton(
+            padding: EdgeInsets.zero,
+            child: Icon(
+              themeManager.themeMode == ThemeMode.dark ? CupertinoIcons.sun_max_fill : CupertinoIcons.moon_fill,
+            ),
+            onPressed: () {
+              themeManager.toggleTheme(themeManager.themeMode == ThemeMode.light);
+            },
+          ),
+        ),
+        child: _buildBody(),
+      );
+    } else {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('BLE Status'),
+          actions: [
+            IconButton(
+              icon: Icon(
+                themeManager.themeMode == ThemeMode.dark ? Icons.wb_sunny : Icons.nights_stay,
+              ),
+              onPressed: () {
+                themeManager.toggleTheme(themeManager.themeMode == ThemeMode.light);
+              },
+            ),
+          ],
+        ),
+        body: _buildBody(),
+      );
+    }
+  }
+}

@@ -3,7 +3,9 @@
 // ユーザーがBLEデバイスをスキャンし、接続するためのページです。
 // パーミッションのチェック、スキャンの開始、デバイスのリスト表示、接続処理を行います。
 import 'dart:async';// Dartの非同期処理用
+import 'dart:io';
 import 'package:bleapp/models/paired_device.dart'; // PairedDeviceモデルをインポート
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';// Flutterの基本ウィジェットライブラリ
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';// BLE操作ライブラリ
 import 'package:permission_handler/permission_handler.dart'; // パーミッションハンドリング
@@ -39,7 +41,7 @@ class _ParingPageState extends State<ParingPage> {
   // Bluetooth関連のパーミッションをチェックし、要求する
   Future<void> _checkPermissionsAndStartScan() async {
     // Android 12 (API 31) 以降では新しいBluetoothパーミッションが必要
-    if (Theme.of(context).platform == TargetPlatform.android) {
+    if (Platform.isAndroid) {
         final bool bluetoothScanGranted = await Permission.bluetoothScan.request().isGranted;
         final bool bluetoothConnectGranted = await Permission.bluetoothConnect.request().isGranted;
         final bool locationWhenInUseGranted = await Permission.locationWhenInUse.request().isGranted;
@@ -59,7 +61,7 @@ class _ParingPageState extends State<ParingPage> {
                 _isScanning = false; // スキャン状態をリセット
             });
         }
-    } else if (Theme.of(context).platform == TargetPlatform.iOS) {
+    } else if (Platform.isIOS) {
         // iOSの場合の位置情報パーミッションの要求結果をprintで出力
         final bool locationWhenInUseGranted = await Permission.locationWhenInUse.request().isGranted;
 
@@ -163,13 +165,28 @@ class _ParingPageState extends State<ParingPage> {
   // スナックバーメッセージを表示するヘルパー関数
   void _showSnackBar(String message, Color bgColor) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: bgColor,
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    if (Platform.isIOS) {
+      showCupertinoDialog(
+        context: context,
+        builder: (context) => CupertinoAlertDialog(
+          title: Text(message),
+          actions: [
+            CupertinoDialogAction(
+              child: const Text('OK'),
+              onPressed: () => Navigator.pop(context),
+            )
+          ],
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: bgColor,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   @override
@@ -181,39 +198,38 @@ class _ParingPageState extends State<ParingPage> {
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.backgroundColor,
-      appBar: AppBar(
-        backgroundColor: AppColors.primaryColor,
-        title: const Text('ペアリング', style: TextStyle(color: Colors.white)), // タイトルを「ペアリング」に変更
-        iconTheme: const IconThemeData(color: Colors.white),
-      ),
-      body: Column(
+  Widget _buildBody() {
+    return Column(
         children: [
           Padding(
             padding: const EdgeInsets.all(16.0),
-            child: ElevatedButton.icon(
-              onPressed: _isScanning ? null : _startScan, // スキャン中はボタンを無効化
-              icon: _isScanning ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 2,
-                ),
-              ) : const Icon(Icons.bluetooth_searching),
-              label: Text(_isScanning ? 'スキャン中...' : 'デバイスをスキャン'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primaryColor,
-                foregroundColor: Colors.white,
-                minimumSize: const Size(double.infinity, 50), // ボタンの幅を最大にし、高さを設定
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-            ),
+            child: Platform.isIOS
+                ? CupertinoButton.filled(
+                    onPressed: _isScanning ? null : _startScan,
+                    child: Text(_isScanning ? 'スキャン中...' : 'デバイスをスキャン'),
+                  )
+                : ElevatedButton.icon(
+                    onPressed: _isScanning ? null : _startScan, // スキャン中はボタンを無効化
+                    icon: _isScanning
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Icon(Icons.bluetooth_searching),
+                    label: Text(_isScanning ? 'スキャン中...' : 'デバイスをスキャン'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primaryColor,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(double.infinity, 50), // ボタンの幅を最大にし、高さを設定
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
           ),
           // スキャン中でない、かつデバイスが何も見つからなかった場合のメッセージ
           if (!_isScanning && _deviceList.isEmpty)
@@ -225,7 +241,7 @@ class _ParingPageState extends State<ParingPage> {
                     Icon(Icons.bluetooth_disabled, size: 60, color: Colors.grey),
                     SizedBox(height: 16),
                     Text(
-                      'デバイスが見つかりませんでした。\nBluetoothがオンになっているか確認してください。',
+                      'デバイスが見つかりませんでした。Bluetoothがオンになっているか確認してください。',
                       textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 16, color: Colors.grey),
                     ),
@@ -242,76 +258,104 @@ class _ParingPageState extends State<ParingPage> {
                 final device = _deviceList[index];
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4.0),
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.cardColor,
-                      foregroundColor: Colors.black87,
-                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                      elevation: 2,
-                      side: const BorderSide(color: AppColors.cardBorderColor),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    onPressed: () async {
-                      final deviceToPair = device;
-                      // 接続中のUIフィードバック
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (!mounted) return;
-                        _showSnackBar('${deviceToPair.name} に接続を試行中...', AppColors.infoColor);
-                      });
-
-                      try {
-                        final bluetoothDevice =
-                            BluetoothDevice(remoteId: DeviceIdentifier(deviceToPair.id));
-
-                        // 既に接続済みか確認
-                        // ignore: await_only_futures
-                        if (await bluetoothDevice.isConnected) {
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            if (!mounted) return;
-                            _showSnackBar('${deviceToPair.name} は既に接続済みです', AppColors.warningColor);
-                          });
-                          if (!mounted) return;
-                          print('ペアリング画面からメイン画面へ返されるデバイス情報: ID=${deviceToPair.id}, 名前=${deviceToPair.name}');
-                          Navigator.pop(context, deviceToPair);
-                          return;
-                        }
-
-                        await bluetoothDevice.connect(
-                          timeout: const Duration(seconds: 10), // 接続タイムアウトを少し長く設定
-                        );
-
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (!mounted) return;
-                          _showSnackBar('${deviceToPair.name} に接続しました', AppColors.successColor);
-                        });
-
-                        // 接続成功時にデバイス情報を main に返す
-                        if (!mounted) return;
-                        Navigator.pop(context, deviceToPair);
-                      } catch (e) {
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (!mounted) return;
-                          _showSnackBar('接続に失敗しました: ${e.toString()}', AppColors.errorColor);
-                        });
-                        
-                      }
-                    },
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(child: Text(device.name)),
-                        const Icon(Icons.chevron_right, color: Colors.grey),
-                      ],
-                    ),
-                  ),
+                  child: Platform.isIOS
+                      ? CupertinoListTile(
+                          title: Text(device.name),
+                          onTap: () => _connectToDevice(device),
+                        )
+                      : ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.cardColor,
+                            foregroundColor: Colors.black87,
+                            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                            elevation: 2,
+                            side: const BorderSide(color: AppColors.cardBorderColor),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          onPressed: () => _connectToDevice(device),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(child: Text(device.name)),
+                              const Icon(Icons.chevron_right, color: Colors.grey),
+                            ],
+                          ),
+                        ),
                 );
               },
             ),
           ),
         ],
-      ),
-    );
+      );
+  }
+
+  Future<void> _connectToDevice(PairedDevice device) async {
+    final deviceToPair = device;
+    // 接続中のUIフィードバック
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _showSnackBar('${deviceToPair.name} に接続を試行中...', AppColors.infoColor);
+    });
+
+    try {
+      final bluetoothDevice =
+          BluetoothDevice(remoteId: DeviceIdentifier(deviceToPair.id));
+
+      // 既に接続済みか確認
+      // ignore: await_only_futures
+      if (await bluetoothDevice.isConnected) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _showSnackBar('${deviceToPair.name} は既に接続済みです', AppColors.warningColor);
+        });
+        if (!mounted) return;
+        print('ペアリング画面からメイン画面へ返されるデバイス情報: ID=${deviceToPair.id}, 名前=${deviceToPair.name}');
+        Navigator.pop(context, deviceToPair);
+        return;
+      }
+
+      await bluetoothDevice.connect(
+        timeout: const Duration(seconds: 10), // 接続タイムアウトを少し長く設定
+      );
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _showSnackBar('${deviceToPair.name} に接続しました', AppColors.successColor);
+      });
+
+      // 接続成功時にデバイス情報を main に返す
+      if (!mounted) return;
+      Navigator.pop(context, deviceToPair);
+    } catch (e) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _showSnackBar('接続に失敗しました: ${e.toString()}', AppColors.errorColor);
+      });
+      
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (Platform.isIOS) {
+      return CupertinoPageScaffold(
+        navigationBar: const CupertinoNavigationBar(
+          middle: Text('ペアリング'),
+        ),
+        child: _buildBody(),
+      );
+    } else {
+      return Scaffold(
+        backgroundColor: AppColors.backgroundColor,
+        appBar: AppBar(
+          backgroundColor: AppColors.primaryColor,
+          title: const Text('ペアリング', style: TextStyle(color: Colors.white)), // タイトルを「ペアリング」に変更
+          iconTheme: const IconThemeData(color: Colors.white),
+        ),
+        body: _buildBody(),
+      );
+    }
   }
 }
