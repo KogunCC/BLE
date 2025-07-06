@@ -2,6 +2,7 @@
 //RSSIの取得と表示、通知のオン/オフ切り替え、接続状態の監視を行う
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math'; // pow 関数を使用するためにインポート
 import 'package:flutter/cupertino.dart';
@@ -27,6 +28,9 @@ class _ConnectPageState extends State<ConnectPage> {
   bool _notificationOn = false;
   String _deviceName = '接続中...';
   int? _rssi;
+  String? _batteryVoltage;
+  BluetoothCharacteristic? _batteryCharacteristic;
+  StreamSubscription<List<int>>? _batterySubscription;
   // _connectedDevice はコンストラクタで受け取った widget.device を使用するため、不要
   Timer? _rssiTimer;
 
@@ -41,11 +45,14 @@ class _ConnectPageState extends State<ConnectPage> {
     _startRssiMonitoring();
     // デバイスの接続状態を監視
     _listenToConnectionState();
+    // サービスを探索し、バッテリー電圧の通知を購読
+    _discoverServicesAndSubscribe();
   }
 
   @override
   void dispose() {
     _rssiTimer?.cancel(); // タイマーをキャンセル
+    _batterySubscription?.cancel(); // バッテリー通知の購読をキャンセル
     super.dispose();
   }
 
@@ -57,12 +64,14 @@ class _ConnectPageState extends State<ConnectPage> {
         setState(() {
           _deviceName = '${widget.device.platformName.isNotEmpty ? widget.device.platformName : widget.device.remoteId.str} (切断されました)';
           _rssi = null; // 切断されたらRSSIをクリア
+          _batteryVoltage = null; // 切断されたらバッテリー電圧をクリア
         });
         _rssiTimer?.cancel(); // 切断されたらタイマーを停止
         _showOverlayMessage('デバイスが切断されました', AppColors.errorColor);
       } else if (state == BluetoothConnectionState.connected) {
-         // 再接続された場合はRSSI監視を再開
+         // 再接続された場合はRSSI監視とサービス探索を再開
          _startRssiMonitoring();
+         _discoverServicesAndSubscribe();
          _showOverlayMessage('デバイスが再接続されました', AppColors.successColor);
          setState(() {
             _deviceName = widget.device.platformName.isNotEmpty
@@ -71,6 +80,43 @@ class _ConnectPageState extends State<ConnectPage> {
          });
       }
     });
+  }
+
+  // サービスを探索し、バッテリー電圧キャラクタリスティックを入手する
+  Future<void> _discoverServicesAndSubscribe() async {
+    if (!widget.device.isConnected) return;
+
+    try {
+      List<BluetoothService> services = await widget.device.discoverServices();
+      for (var service in services) {
+        if (service.uuid.str.toLowerCase() == BleUuids.featherTagService) {
+          for (var characteristic in service.characteristics) {
+            if (characteristic.uuid.str.toLowerCase() == BleUuids.batteryVoltageCharacteristic) {
+              _batteryCharacteristic = characteristic;
+              // 初期の電圧を読み取り
+              List<int> value = await characteristic.read();
+              if(mounted) {
+                setState(() {
+                  _batteryVoltage = utf8.decode(value);
+                });
+              }
+              // 通知を購読
+              await characteristic.setNotifyValue(true);
+              _batterySubscription = characteristic.onValueReceived.listen((value) {
+                if (mounted) {
+                  setState(() {
+                    _batteryVoltage = utf8.decode(value);
+                  });
+                }
+              });
+              return; // キャラクタリスティックが見つかったらループを抜ける
+            }
+          }
+        }
+      }
+    } catch (e) {
+      _showOverlayMessage('サービスの探索に失敗しました: ${e.toString()}', AppColors.errorColor);
+    }
   }
 
   // RSSIの定期的な監視を開始
@@ -214,6 +260,15 @@ class _ConnectPageState extends State<ConnectPage> {
                     color: AppColors.textColor,
                   ),
                 ),
+              const SizedBox(height: 10),
+              // バッテリー電圧を表示
+              Text(
+                _batteryVoltage != null ? 'バッテリー容量: $_batteryVoltage V' : 'バッテリー容量: 未取得',
+                style: const TextStyle(
+                  fontSize: 18,
+                  color: AppColors.textColor,
+                ),
+              ),
               const SizedBox(height: 10),
               Text(
                 _rssi != null && _deviceName != '接続されたデバイスがありません (未接続)' ? '接続済み' : '未接続', // RSSIが取得できていれば「接続済み」

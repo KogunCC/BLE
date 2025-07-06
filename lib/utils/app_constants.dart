@@ -14,3 +14,8 @@ class AppColors {
   static const Color cardColor = Colors.white;
   static const Color cardBorderColor = Colors.teal;
 }
+
+class BleUuids {
+  static const String featherTagService = "8f2c7e40-9f2f-4dcb-bd79-bc0f2a06d3a1";
+  static const String batteryVoltageCharacteristic = "8f2c7e43-9f2f-4dcb-bd79-bc0f2a06d3a1";
+}
