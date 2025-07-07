@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:convert'; // JSONエンコード/デコード用
 import 'dart:io'; // プラットフォーム判定のため
 import 'package:bleapp/models/paired_device.dart';// PairedDeviceモデルをインポート
+import 'package:bleapp/utils/notification_service.dart';// 通知サービスをインポート
 import 'package:bleapp/utils/theme_manager.dart';
 import 'package:flutter/cupertino.dart'; // Cupertinoデザインのため
 import 'package:flutter/material.dart';// Flutterの基本ウィジェットライブラリ
@@ -19,6 +20,9 @@ import 'package:bleapp/utils/app_constants.dart'; // 新しい定数ファイル
 void main() async {
   // Flutterウィジェットバインディングを初期化し、プラットフォームチャネルが利用可能であることを保証
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 通知サービスを初期化
+  await NotificationService.initialize();
 
   // ⭐ FlutterBluePlusのオプション設定 ⭐
   // 'BluetoothAdapterOptions'が未定義エラーになるため、
@@ -79,21 +83,41 @@ class BLEStatusScreen extends StatefulWidget {
   State<BLEStatusScreen> createState() => _BLEStatusScreenState();
 }
 
-class _BLEStatusScreenState extends State<BLEStatusScreen> {
+class _BLEStatusScreenState extends State<BLEStatusScreen> with WidgetsBindingObserver {
   List<PairedDevice> _pairedDevices = [];
   // 現在スキャンが進行中かどうかを示すフラグ。UIの制御に使用。
   bool _isScanning = false;
   // 各デバイスの現在の接続状態をリアルタイムで追跡するマップ。
   final Map<String, bool> _deviceConnectionStatus = {};
+  // 各デバイスの接続状態監視を管理するマップ
+  final Map<String, StreamSubscription> _connectionSubscriptions = {};
+  // アプリがバックグラウンドにあるかどうかを示すフラグ
+  bool _isInBackground = false;
+
 
   @override
   void initState() {
     super.initState();
-    _loadPairedDevices(); // アプリ起動時にペアリング済みデバイスをロード
+    // ライフサイクル監視を開始
+    WidgetsBinding.instance.addObserver(this);
+    _loadPairedDevices().then((_) {
+      // ロード後にデバイスの接続状態監視を開始
+      _setupAllDeviceListeners();
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initiateDeviceDiscovery();
     });
   }
+
+  // アプリのライフサイクルが変更されたときに呼び出される
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    setState(() {
+      _isInBackground = state == AppLifecycleState.paused;
+    });
+  }
+
 
   /* ========= SharedPreferences による永続化 =========== */
 
@@ -121,16 +145,18 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
     }
   }
 
-  // ペアリング情報をリセットする
   Future<void> _resetPairedDevices() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('paired_devices'); // SharedPreferencesから情報を削除
+    // 既存のリスナーをすべてキャンセル
+    _cancelAllDeviceListeners();
     if (!mounted) return;
     setState(() {
       // UIの状態をすべてリセット
       _pairedDevices.clear();
       _deviceConnectionStatus.clear();
     });
+    // 状態がクリアされた後、UIが更新されてからメッセージを表示
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _showOverlayMessage('すべてのペアリング情報がリセットされました', AppColors.infoColor);
     });
@@ -177,6 +203,78 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
   }
 
   /* ========= BLEスキャンと接続ロジック =========== */
+
+  // 特定のデバイスの接続状態を監視するリスナーをセットアップ
+  void _setupDeviceListener(PairedDevice pDevice) {
+    // 既存のリスナーがあればキャンセル
+    _connectionSubscriptions[pDevice.id]?.cancel();
+
+    final device = BluetoothDevice(remoteId: DeviceIdentifier(pDevice.id));
+    _connectionSubscriptions[pDevice.id] = device.connectionState.listen((state) {
+      if (!mounted) return;
+
+      final isConnected = state == BluetoothConnectionState.connected;
+      // 接続状態が変化した場合のみUIを更新
+      if (_deviceConnectionStatus[pDevice.id] != isConnected) {
+        setState(() {
+          _deviceConnectionStatus[pDevice.id] = isConnected;
+        });
+      }
+
+      // バックグラウンドで切断された場合に通知を送信
+      if (!isConnected && _isInBackground) {
+        NotificationService.showNotification(
+          id: pDevice.id.hashCode, // デバイスごとにユニークなID
+          title: 'デバイス接続エラー',
+          body: '${pDevice.name} との接続が切れました。',
+        );
+      }
+    });
+  }
+
+  // すべてのペアリング済みデバイスのリスナーをセットアップ
+  void _setupAllDeviceListeners() {
+    for (var pDevice in _pairedDevices) {
+      _setupDeviceListener(pDevice);
+    }
+  }
+
+  // すべてのリスナーをキャンセル
+  void _cancelAllDeviceListeners() {
+    for (var sub in _connectionSubscriptions.values) {
+      sub.cancel();
+    }
+    _connectionSubscriptions.clear();
+  }
+
+  // 特定のデバイスのペアリングを解除する
+  Future<void> _unpairDevice(String deviceId) async {
+    final device = BluetoothDevice(remoteId: DeviceIdentifier(deviceId));
+
+    // 接続中の場合は切断する
+    if (device.isConnected) {
+      await device.disconnect();
+    }
+
+    // 接続監視をキャンセル
+    _connectionSubscriptions[deviceId]?.cancel();
+    _connectionSubscriptions.remove(deviceId);
+
+    if (!mounted) return;
+    setState(() {
+      // リストからデバイスを削除
+      _pairedDevices.removeWhere((d) => d.id == deviceId);
+      _deviceConnectionStatus.remove(deviceId);
+    });
+
+    // 永続化
+    await _savePairedDevices();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _showOverlayMessage('デバイスのペアリングを解除しました', AppColors.infoColor);
+    });
+  }
+
 
   Future<void> _initiateDeviceDiscovery() async {
     if (_isScanning) return;
@@ -241,6 +339,8 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
       } catch (_) {
         tempConnectionStatus[dev.id] = false;
       }
+      // 接続状態が更新された後、リスナーを再設定
+      _setupDeviceListener(dev);
     }
 
     if (!mounted) return;
@@ -259,40 +359,69 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
 
   // リセット確認ダイアログを表示する
   Future<void> _showResetConfirmationDialog() async {
-    return showDialog<void>(
-      context: context,
-      barrierDismissible: false, // ダイアログ外をタップしても閉じない
-      builder: (BuildContext context) {
-        return AlertDialog(
+    if (Platform.isIOS) {
+      return showCupertinoDialog<void>(
+        context: context,
+        builder: (BuildContext context) => CupertinoAlertDialog(
           title: const Text('確認'),
-          content: const SingleChildScrollView(
-            child: ListBody(
-              children: <Widget>[
-                Text('すべてのペアリング情報が削除されます。'),
-                Text('よろしいですか？'),
-              ],
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
+          content: const Text('すべてのペアリング情報が削除されます。よろしいですか？'),
+          actions: <CupertinoDialogAction>[
+            CupertinoDialogAction(
               child: const Text('キャンセル'),
               onPressed: () => Navigator.of(context).pop(),
             ),
-            TextButton(
-              child: const Text('リセット', style: TextStyle(color: Colors.red)),
+            CupertinoDialogAction(
+              isDestructiveAction: true,
+              child: const Text('リセット'),
               onPressed: () {
+                print("リセットボタンが押されました。");
                 Navigator.of(context).pop(); // ダイアログを閉じる
                 _resetPairedDevices();      // リセット処理を実行
               },
             ),
           ],
-        );
-      },
-    );
+        ),
+      );
+    } else {
+      return showDialog<void>(
+        context: context,
+        barrierDismissible: false, // ダイアログ外をタップしても閉じない
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: const Text('確認'),
+            content: const SingleChildScrollView(
+              child: ListBody(
+                children: <Widget>[
+                  Text('すべてのペアリング情報が削除されます。'),
+                  Text('よろしいですか？'),
+                ],
+              ),
+            ),
+            actions: <Widget>[
+              TextButton(
+                child: const Text('キャンセル'),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+              TextButton(
+                child: const Text('リセット', style: TextStyle(color: Colors.red)),
+                onPressed: () {
+                  print("リセットボタンが押されました。");
+                  Navigator.of(context).pop(); // ダイアログを閉じる
+                  _resetPairedDevices();      // リセット処理を実行
+                },
+              ),
+            ],
+          );
+        },
+      );
+    }
   }
 
   @override
   void dispose() {
+    // ライフサイクル監視と接続監視を終了
+    WidgetsBinding.instance.removeObserver(this);
+    _cancelAllDeviceListeners();
     super.dispose();
   }
 
@@ -379,7 +508,7 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
 
                 if (targetDevice != null) {
                   if (!mounted) return;
-                  Navigator.push(context, MaterialPageRoute(builder: (context) => ConnectPage(device: targetDevice!)));
+                  Navigator.push(context, MaterialPageRoute(builder: (context) => ConnectPage(device: targetDevice!, onUnpair: _unpairDevice)));
                 } else {
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     if (!mounted) return;
@@ -458,10 +587,13 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> {
                               if (!mounted) return;
                               // 接続前にユニークな名前を生成
                               final uniqueName = _generateUniqueDeviceName(result.name);
+                              final newDevice = PairedDevice(id: result.id, name: uniqueName);
                               setState(() {
-                                _pairedDevices.add(PairedDevice(id: result.id, name: uniqueName));
+                                _pairedDevices.add(newDevice);
                                 _deviceConnectionStatus[result.id] = true;
                               });
+                              // 新しいデバイスのリスナーをセットアップ
+                              _setupDeviceListener(newDevice);
                               WidgetsBinding.instance.addPostFrameCallback((_) {
                                 _showOverlayMessage('ペアリング成功: $uniqueName', AppColors.successColor);
                               });

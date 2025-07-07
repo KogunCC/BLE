@@ -15,9 +15,10 @@ import 'package:bleapp/utils/app_constants.dart';
 
 class ConnectPage extends StatefulWidget {
   final BluetoothDevice device; // 接続済みデバイスを受け取るためのフィールド
+  final Future<void> Function(String) onUnpair; // ペアリング解除のためのコールバック関数
 
-  // コンストラクタでデバイスを受け取るように変更
-  const ConnectPage({super.key, required this.device});
+  // コンストラクタでデバイスとコールバックを受け取るように変更
+  const ConnectPage({super.key, required this.device, required this.onUnpair});
 
   @override
   State<ConnectPage> createState() => _ConnectPageState();
@@ -29,7 +30,6 @@ class _ConnectPageState extends State<ConnectPage> {
   String _deviceName = '接続中...';
   int? _rssi;
   String? _batteryVoltage;
-  BluetoothCharacteristic? _batteryCharacteristic;
   StreamSubscription<List<int>>? _batterySubscription;
   // _connectedDevice はコンストラクタで受け取った widget.device を使用するため、不要
   Timer? _rssiTimer;
@@ -92,7 +92,6 @@ class _ConnectPageState extends State<ConnectPage> {
         if (service.uuid.str.toLowerCase() == BleUuids.featherTagService) {
           for (var characteristic in service.characteristics) {
             if (characteristic.uuid.str.toLowerCase() == BleUuids.batteryVoltageCharacteristic) {
-              _batteryCharacteristic = characteristic;
               // 初期の電圧を読み取り
               List<int> value = await characteristic.read();
               if(mounted) {
@@ -329,10 +328,86 @@ class _ConnectPageState extends State<ConnectPage> {
                     style: TextStyle(fontSize: 18, color: Colors.white),
                   ),
                 ),
+              const SizedBox(height: 20),
+              // ペアリング解除ボタン
+              ElevatedButton.icon(
+                icon: const Icon(Icons.link_off, color: Colors.white),
+                label: const Text('ペアリングを解除', style: TextStyle(fontSize: 16, color: Colors.white)),
+                onPressed: _showUnpairConfirmationDialog,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.errorColor,
+                  padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
             ],
           ),
         ),
       );
+  }
+
+  // ペアリング解除の確認ダイアログを表示
+  Future<void> _showUnpairConfirmationDialog() async {
+    if (Platform.isIOS) {
+      return showCupertinoDialog<void>(
+        context: context,
+        builder: (BuildContext context) => CupertinoAlertDialog(
+          title: const Text('確認'),
+          content: const Text('このデバイスとのペアリングを解除します。よろしいですか？'),
+          actions: <CupertinoDialogAction>[
+            CupertinoDialogAction(
+              child: const Text('キャンセル'),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            CupertinoDialogAction(
+              isDestructiveAction: true,
+              child: const Text('解除する'),
+              onPressed: () async {
+                print("ペアリング解除ボタンが押されました。");
+                Navigator.of(context).pop(); // ダイアログを閉じる
+                await widget.onUnpair(widget.device.remoteId.str); // コールバックを実行
+                if (!mounted) return; // 非同期処理後にウィジェットがまだ存在するか確認
+                Navigator.of(context).pop(); // ConnectPageを閉じてメイン画面に戻る
+              },
+            ),
+          ],
+        ),
+      );
+    } else {
+      return showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: const Text('確認'),
+            content: const SingleChildScrollView(
+              child: ListBody(
+                children: <Widget>[
+                  Text('このデバイスとのペアリングを解除します。'),
+                  Text('よろしいですか？'),
+                ],
+              ),
+            ),
+            actions: <Widget>[
+              TextButton(
+                child: const Text('キャンセル'),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+              TextButton(
+                child: const Text('解除する', style: TextStyle(color: Colors.red)),
+                onPressed: () async {
+                  print("ペアリング解除ボタンが押されました。");
+                  Navigator.of(context).pop(); // ダイアログを閉じる
+                  await widget.onUnpair(widget.device.remoteId.str); // コールバックを実行
+                  if (!mounted) return; // 非同期処理後にウィジェットがまだ存在するか確認
+                  Navigator.of(context).pop(); // ConnectPageを閉じてメイン画面に戻る
+                },
+              ),
+            ],
+          );
+        },
+      );
+    }
   }
 
   @override
