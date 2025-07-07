@@ -1,7 +1,4 @@
-// ParingPage.dart
-//// BLEデバイスのペアリングを行うページ
-// ユーザーがBLEデバイスをスキャンし、接続するためのページです。
-// パーミッションのチェック、スキャンの開始、デバイスのリスト表示、接続処理を行います。
+
 import 'dart:async';// Dartの非同期処理用
 import 'dart:io';
 import 'package:bleapp/models/paired_device.dart'; // PairedDeviceモデルをインポート

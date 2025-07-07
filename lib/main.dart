@@ -6,15 +6,17 @@ import 'dart:convert'; // JSONエンコード/デコード用
 import 'dart:io'; // プラットフォーム判定のため
 import 'package:bleapp/models/paired_device.dart';// PairedDeviceモデルをインポート
 import 'package:bleapp/utils/notification_service.dart';// 通知サービスをインポート
-import 'package:bleapp/utils/theme_manager.dart';
+import 'package:bleapp/utils/theme_manager.dart';// テーマ管理クラスをインポート
 import 'package:flutter/cupertino.dart'; // Cupertinoデザインのため
 import 'package:flutter/material.dart';// Flutterの基本ウィジェットライブラリ
 import 'package:flutter_blue_plus/flutter_blue_plus.dart'; // BLE操作ライブラリ
-import 'package:provider/provider.dart';
+import 'package:provider/provider.dart';// プロバイダーパッケージを使用して状態管理
 import 'package:shared_preferences/shared_preferences.dart'; // ローカルストレージ用
 import 'connect_page.dart'; // ConnectPageへの遷移を仮定
 import 'pairing.dart';     // ParingPageへの遷移を仮定
 import 'package:bleapp/utils/app_constants.dart'; // 新しい定数ファイル
+import 'package:bleapp/utils/location_service.dart';// 位置情報サービスをインポート
+import 'package:geolocator/geolocator.dart';// 位置情報取得のためのパッケージ
 
 // アプリのエントリーポイント
 void main() async {
@@ -100,6 +102,7 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> with WidgetsBindingOb
     super.initState();
     // ライフサイクル監視を開始
     WidgetsBinding.instance.addObserver(this);
+    
     _loadPairedDevices().then((_) {
       // ロード後にデバイスの接続状態監視を開始
       _setupAllDeviceListeners();
@@ -108,6 +111,8 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> with WidgetsBindingOb
       _initiateDeviceDiscovery();
     });
   }
+
+  
 
   // アプリのライフサイクルが変更されたときに呼び出される
   @override
@@ -229,6 +234,11 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> with WidgetsBindingOb
           body: '${pDevice.name} との接続が切れました。',
         );
       }
+
+      // デバイスが切断された際に位置情報を記録
+      if (!isConnected && _deviceConnectionStatus[pDevice.id] == true) {
+        _recordDeviceLocationOnDisconnect(pDevice.id);
+      }
     });
   }
 
@@ -275,6 +285,32 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> with WidgetsBindingOb
     });
   }
 
+
+  // デバイス切断時に位置情報を記録する
+  Future<void> _recordDeviceLocationOnDisconnect(String deviceId) async {
+    try {
+      Position? position = await LocationService.getCurrentPosition(context);
+      if (position == null) return;
+
+      setState(() {
+        final index = _pairedDevices.indexWhere((d) => d.id == deviceId);
+        if (index != -1) {
+          final oldDevice = _pairedDevices[index];
+          _pairedDevices[index] = PairedDevice(
+            id: oldDevice.id,
+            name: oldDevice.name,
+            latitude: position.latitude,
+            longitude: position.longitude,
+          );
+          _showOverlayMessage('${oldDevice.name} の最終位置を記録しました。', AppColors.infoColor);
+        }
+      });
+      await _savePairedDevices();
+    } catch (e) {
+      if (!mounted) return;
+      _showOverlayMessage('位置情報の記録に失敗しました: ${e.toString()}', AppColors.errorColor);
+    }
+  }
 
   Future<void> _initiateDeviceDiscovery() async {
     if (_isScanning) return;
@@ -472,11 +508,30 @@ class _BLEStatusScreenState extends State<BLEStatusScreen> with WidgetsBindingOb
               connected ? 'Connected' : 'Disconnected',
               style: TextStyle(fontSize: 16, color: connected ? AppColors.connectedColor : Colors.black54),
             ),
+            // 切断されたデバイスの場合のみ位置情報表示ボタンを表示
+            if (!connected && onTap != null) // onTapがnullでないことを確認
+              IconButton(
+                icon: const Icon(Icons.location_on, color: AppColors.accentColor),
+                onPressed: () {
+                  // ここで位置情報表示のロジックを呼び出す
+                  _showLastKnownLocation(id);
+                },
+              ),
           ],
         ),
       ),
     );
     return onTap != null ? GestureDetector(onTap: onTap, child: card) : card;
+  }
+
+  // 最終記録位置を表示するメソッド
+  Future<void> _showLastKnownLocation(String deviceId) async {
+    final device = _pairedDevices.firstWhere((d) => d.id == deviceId);
+    if (device.latitude != null && device.longitude != null) {
+      LocationService.showLocationOnMap(context, device.latitude!, device.longitude!);
+    } else {
+      _showOverlayMessage('このデバイスの最終位置情報は記録されていません。', AppColors.warningColor);
+    }
   }
 
   /* ========= UIレイアウトのビルド =========== */

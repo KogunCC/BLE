@@ -9,6 +9,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:bleapp/utils/app_constants.dart';
+import 'package:bleapp/utils/location_service.dart';
 
 // main.dart はこのConnectPageに遷移する際、BluetoothDeviceオブジェクトを渡す必要があります。
 // 例: Navigator.push(context, MaterialPageRoute(builder: (context) => ConnectPage(device: yourConnectedDevice)));
@@ -329,6 +330,19 @@ class _ConnectPageState extends State<ConnectPage> {
                   ),
                 ),
               const SizedBox(height: 20),
+              // 現在位置を表示ボタン
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.location_on, color: Colors.white),
+                label: const Text('現在位置を表示', style: TextStyle(fontSize: 16, color: Colors.white)),
+                onPressed: () => LocationService.showCurrentLocation(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primaryColor,
+                  padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              const SizedBox(height: 20),
               // ペアリング解除ボタン
               ElevatedButton.icon(
                 icon: const Icon(Icons.link_off, color: Colors.white),
@@ -345,6 +359,8 @@ class _ConnectPageState extends State<ConnectPage> {
         ),
       );
   }
+
+  
 
   // ペアリング解除の確認ダイアログを表示
   Future<void> _showUnpairConfirmationDialog() async {
@@ -364,10 +380,10 @@ class _ConnectPageState extends State<ConnectPage> {
               child: const Text('解除する'),
               onPressed: () async {
                 print("ペアリング解除ボタンが押されました。");
-                Navigator.of(context).pop(); // ダイアログを閉じる
+                final currentContext = context;
                 await widget.onUnpair(widget.device.remoteId.str); // コールバックを実行
-                if (!mounted) return; // 非同期処理後にウィジェットがまだ存在するか確認
-                Navigator.of(context).pop(); // ConnectPageを閉じてメイン画面に戻る
+                if (!currentContext.mounted) return; // 非同期処理後にウィジェットがまだ存在するか確認
+                Navigator.of(currentContext).pop(); // ConnectPageを閉じてメイン画面に戻る
               },
             ),
           ],
@@ -397,10 +413,10 @@ class _ConnectPageState extends State<ConnectPage> {
                 child: const Text('解除する', style: TextStyle(color: Colors.red)),
                 onPressed: () async {
                   print("ペアリング解除ボタンが押されました。");
-                  Navigator.of(context).pop(); // ダイアログを閉じる
+                  final currentContext = context;
                   await widget.onUnpair(widget.device.remoteId.str); // コールバックを実行
-                  if (!mounted) return; // 非同期処理後にウィジェットがまだ存在するか確認
-                  Navigator.of(context).pop(); // ConnectPageを閉じてメイン画面に戻る
+                  if (!currentContext.mounted) return; // 非同期処理後にウィジェットがまだ存在するか確認
+                  Navigator.of(currentContext).pop(); // ConnectPageを閉じてメイン画面に戻る
                 },
               ),
             ],
