@@ -28,5 +28,9 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>周辺のBLEデバイスを検索し、接続するためにBluetoothを使用します。</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>デバイスの最終位置を記録するために位置情報を使用します。</string>
 </dict>
 </plist>

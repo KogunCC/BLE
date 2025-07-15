@@ -15,6 +15,7 @@ class NotificationService {
     final InitializationSettings initializationSettings = InitializationSettings(
       android: initializationSettingsAndroid,
       iOS: initializationSettingsIOS,
+      macOS: initializationSettingsIOS, // macOS用の設定を追加
     );
 
     await _notificationsPlugin.initialize(initializationSettings);

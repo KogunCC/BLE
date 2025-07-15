@@ -25,13 +25,7 @@ void main() async {
 
   // 通知サービスを初期化
   await NotificationService.initialize();
-
-  // ⭐ FlutterBluePlusのオプション設定 ⭐
-  // 'BluetoothAdapterOptions'が未定義エラーになるため、
-  // もし将来的に restoreIdentifierKey を設定する必要が出た場合、
-  // flutter_blue_plus の最新ドキュメントや CHANGELOG を参照し、
-  // 正しい setOptions の引数形式を確認する必要があります。
-  FlutterBluePlus.setOptions(); // 引数なしで呼び出す形式
+  FlutterBluePlus.setOptions(); 
 
   // アプリケーションを実行
   runApp(
