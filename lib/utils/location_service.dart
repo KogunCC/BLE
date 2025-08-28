@@ -1,121 +1,82 @@
-
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:bleapp/utils/app_constants.dart';
+import 'dart:developer' as developer; // for logging
 
 class LocationService {
-  // 位置情報サービスが有効か確認し、無効な場合はユーザーに有効化を促す
-  static Future<bool> _checkLocationServiceEnabled(BuildContext context) async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      _showOverlayMessage(context, '位置情報サービスが無効です。有効にしてください。', AppColors.errorColor);
-      return false;
-    }
-    return true;
+  static const String _tag = "LocationService";
+
+  // 位置情報サービスが有効か確認
+  static Future<bool> isLocationServiceEnabled() async {
+    developer.log('Checking if location service is enabled...', name: _tag);
+    return await Geolocator.isLocationServiceEnabled();
   }
 
   // 位置情報パーミッションの状態を確認し、必要であれば要求する
-  static Future<bool> _checkLocationPermission(BuildContext context) async {
+  static Future<LocationPermission> checkAndRequestPermission() async {
+    developer.log('Checking location permission...', name: _tag);
     LocationPermission permission = await Geolocator.checkPermission();
+    developer.log('Initial permission status: $permission', name: _tag);
+
     if (permission == LocationPermission.denied) {
+      developer.log('Permission denied, requesting permission...', name: _tag);
       permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        _showOverlayMessage(context, '位置情報へのアクセスが拒否されました。', AppColors.errorColor);
-        return false;
-      }
+      developer.log('Permission status after request: $permission', name: _tag);
     }
-    if (permission == LocationPermission.deniedForever) {
-      _showOverlayMessage(context, '位置情報へのアクセスが永続的に拒否されています。設定から許可してください。', AppColors.errorColor);
-      return false;
-    }
-    return true;
-  }
-
-  // 現在位置を取得し、地図アプリで表示する
-  static Future<void> showCurrentLocation(BuildContext context) async {
-    _showOverlayMessage(context, '現在位置を取得中...', AppColors.infoColor);
-    try {
-      Position? position = await getCurrentPosition(context);
-      if (position == null) return;
-
-      final String googleMapsUrl = 'https://www.google.com/maps/search/?api=1&query=${position.latitude},${position.longitude}';
-
-      if (await canLaunchUrl(Uri.parse(googleMapsUrl))) {
-        await launchUrl(Uri.parse(googleMapsUrl));
-      } else {
-        _showOverlayMessage(context, '地図アプリを起動できませんでした。', AppColors.errorColor);
-      }
-    } catch (e) {
-      _showOverlayMessage(context, '現在位置の取得中にエラーが発生しました: ${e.toString()}', AppColors.errorColor);
-    }
+    return permission;
   }
 
   // 現在位置を取得する
-  static Future<Position?> getCurrentPosition(BuildContext context) async {
+  static Future<Position> getCurrentPosition() async {
+    developer.log('Attempting to get current position...', name: _tag);
     try {
-      if (!await _checkLocationServiceEnabled(context) || !await _checkLocationPermission(context)) {
-        return null;
+      final serviceEnabled = await isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        developer.log('Location service is not enabled.', name: _tag);
+        throw const LocationServiceDisabledException();
       }
-      return await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+
+      final permission = await checkAndRequestPermission();
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        developer.log('Location permission denied.', name: _tag);
+        throw PermissionDeniedException('Location permission was denied.');
+      }
+      
+      developer.log('All checks passed, getting position...', name: _tag);
+      const LocationSettings locationSettings = LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 100,
+      );
+      Position position = await Geolocator.getCurrentPosition(locationSettings: locationSettings);
+      developer.log('Got position: $position', name: _tag);
+      return position;
+
+    } on LocationServiceDisabledException {
+      rethrow; // 呼び出し元で処理できるように再スロー
+    } on PermissionDeniedException {
+      rethrow; // 呼び出し元で処理できるように再スロー
     } catch (e) {
-      _showOverlayMessage(context, '位置情報の取得中にエラーが発生しました: ${e.toString()}', AppColors.errorColor);
-      return null;
+      developer.log('Error in getCurrentPosition: ${e.toString()}', name: _tag);
+      // その他の予期せぬエラー
+      throw Exception('An unexpected error occurred while getting location: ${e.toString()}');
     }
   }
 
   // 指定された緯度経度を地図アプリで表示する
-  static Future<void> showLocationOnMap(BuildContext context, double latitude, double longitude) async {
+  static Future<void> showLocationOnMap(double latitude, double longitude) async {
     try {
-      final String googleMapsUrl = 'https://www.google.com/maps/search/?api=1&query=$latitude,$longitude';
-      if (await canLaunchUrl(Uri.parse(googleMapsUrl))) {
-        await launchUrl(Uri.parse(googleMapsUrl));
+      final Uri googleMapsUrl = Uri.parse('https://www.google.com/maps/search/?api=1&query=$latitude,$longitude');
+      developer.log('Attempting to launch URL for specific location: $googleMapsUrl', name: _tag);
+      if (await canLaunchUrl(googleMapsUrl)) {
+        await launchUrl(googleMapsUrl, mode: LaunchMode.externalApplication);
+        developer.log('URL launched successfully.', name: _tag);
       } else {
-        _showOverlayMessage(context, '地図アプリを起動できませんでした。', AppColors.errorColor);
+        developer.log('Could not launch URL.', name: _tag);
+        throw Exception('Could not launch map application.');
       }
     } catch (e) {
-      _showOverlayMessage(context, '位置情報の表示中にエラーが発生しました: ${e.toString()}', AppColors.errorColor);
+      developer.log('Error in showLocationOnMap: ${e.toString()}', name: _tag);
+      throw Exception('An error occurred while trying to show location on map: ${e.toString()}');
     }
-  }
-
-  // 画面上部に一時的なオーバーレイメッセージを表示
-  static void _showOverlayMessage(BuildContext context, String message, Color bgColor) {
-    final overlay = Overlay.of(context);
-    final overlayEntry = OverlayEntry(
-      builder: (context) => Positioned(
-        top: 50,
-        left: 20,
-        right: 20,
-        child: Material(
-          color: Colors.transparent,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: bgColor,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: const [
-                BoxShadow(
-                  color: Colors.black26,
-                  blurRadius: 10,
-                  offset: Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Text(
-              message,
-              style: const TextStyle(color: Colors.white, fontSize: 16),
-              textAlign: TextAlign.center,
-            ),
-          ),
-        ),
-      ),
-    );
-
-    overlay.insert(overlayEntry);
-    Future.delayed(const Duration(seconds: 1), () {
-      if (overlayEntry.mounted) {
-        overlayEntry.remove();
-      }
-    });
   }
 }

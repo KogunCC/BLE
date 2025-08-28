@@ -68,12 +68,12 @@ class _ConnectPageState extends State<ConnectPage> {
           _batteryVoltage = null; // 切断されたらバッテリー電圧をクリア
         });
         _rssiTimer?.cancel(); // 切断されたらタイマーを停止
-        _showOverlayMessage('デバイスが切断されました', AppColors.errorColor);
+        _showSnackBar('デバイスが切断されました', AppColors.errorColor);
       } else if (state == BluetoothConnectionState.connected) {
          // 再接続された場合はRSSI監視とサービス探索を再開
          _startRssiMonitoring();
          _discoverServicesAndSubscribe();
-         _showOverlayMessage('デバイスが再接続されました', AppColors.successColor);
+         _showSnackBar('デバイスが再接続されました', AppColors.successColor);
          setState(() {
             _deviceName = widget.device.platformName.isNotEmpty
                 ? widget.device.platformName
@@ -115,7 +115,7 @@ class _ConnectPageState extends State<ConnectPage> {
         }
       }
     } catch (e) {
-      _showOverlayMessage('サービスの探索に失敗しました: ${e.toString()}', AppColors.errorColor);
+      _showSnackBar('サービスの探索に失敗しました: ${e.toString()}', AppColors.errorColor);
     }
   }
 
@@ -151,47 +151,16 @@ class _ConnectPageState extends State<ConnectPage> {
     }
   }
 
-  // 画面上部に一時的なオーバーレイメッセージを表示
-  void _showOverlayMessage(String message, Color bgColor) {
-    if (!mounted) return; // ウィジェットがマウントされているか確認
-
-    final overlay = Overlay.of(context);
-    final overlayEntry = OverlayEntry(
-      builder: (context) => Positioned(
-        top: 50,
-        left: 20,
-        right: 20,
-        child: Material(
-          color: Colors.transparent,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: bgColor,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: const [
-                BoxShadow(
-                  color: Colors.black26,
-                  blurRadius: 10,
-                  offset: Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Text(
-              message,
-              style: const TextStyle(color: Colors.white, fontSize: 16),
-              textAlign: TextAlign.center,
-            ),
-          ),
-        ),
-      ),
-    );
-
-    overlay.insert(overlayEntry);
-    Future.delayed(const Duration(seconds: 1), () {
-      if (overlayEntry.mounted) { // オーバーレイがまだ存在するか確認してから削除
-        overlayEntry.remove();
-      }
-    });
+  // SnackBarでメッセージを表示
+  void _showSnackBar(String message, Color bgColor) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message, style: const TextStyle(color: Colors.white)),
+      backgroundColor: bgColor,
+      behavior: SnackBarBehavior.floating,
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 20), // 画面下部からのマージン
+      duration: const Duration(seconds: 2),
+    ));
   }
 
   // 通知オン/オフを切り替える
@@ -199,7 +168,7 @@ class _ConnectPageState extends State<ConnectPage> {
     setState(() {
       _notificationOn = !_notificationOn;
     });
-    _showOverlayMessage(
+    _showSnackBar(
         _notificationOn ? '通知をONにしました' : '通知をOFFにしました',
         _notificationOn ? AppColors.successColor : AppColors.errorColor);
     // ここに実際の通知設定ロジックを追加（例: デバイスの特性への書き込み）
@@ -225,7 +194,7 @@ class _ConnectPageState extends State<ConnectPage> {
     return distance.toStringAsFixed(2); // 小数第2位まで表示
   }
 
-  Widget _buildBody() {
+  Widget _buildBody(BuildContext context) {
     return Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
@@ -238,6 +207,7 @@ class _ConnectPageState extends State<ConnectPage> {
                   fontSize: 32,
                   fontWeight: FontWeight.bold,
                   color: AppColors.textColor,
+                  decoration: TextDecoration.none,
                 ),
                 textAlign: TextAlign.center, // 中央揃え
               ),
@@ -248,6 +218,7 @@ class _ConnectPageState extends State<ConnectPage> {
                   fontSize: 22,
                   fontWeight: FontWeight.bold,
                   color: AppColors.textColor,
+                  decoration: TextDecoration.none,
                 ),
               ),
               const SizedBox(height: 10),
@@ -267,6 +238,7 @@ class _ConnectPageState extends State<ConnectPage> {
                 style: const TextStyle(
                   fontSize: 18,
                   color: AppColors.textColor,
+                  decoration: TextDecoration.none,
                 ),
               ),
               const SizedBox(height: 10),
@@ -274,6 +246,7 @@ class _ConnectPageState extends State<ConnectPage> {
                 _rssi != null && _deviceName != '接続されたデバイスがありません (未接続)' ? '接続済み' : '未接続', // RSSIが取得できていれば「接続済み」
                 style: TextStyle(
                     fontSize: 18,
+                    decoration: TextDecoration.none,
                     color: (_rssi != null && _deviceName != '接続されたデバイスがありません (未接続)') ? AppColors.textColor : AppColors.errorColor), // 未接続なら赤色
               ),
               const SizedBox(height: 24),
@@ -335,7 +308,22 @@ class _ConnectPageState extends State<ConnectPage> {
               ElevatedButton.icon(
                 icon: const Icon(Icons.location_on, color: Colors.white),
                 label: const Text('現在位置を表示', style: TextStyle(fontSize: 16, color: Colors.white)),
-                onPressed: () => LocationService.showCurrentLocation(context),
+                onPressed: () async {
+                  try {
+                    final position = await LocationService.getCurrentPosition();
+                    if (!mounted) return;
+                    await LocationService.showLocationOnMap(position.latitude, position.longitude);
+                  } on Exception catch (e) {
+                    if (!mounted) return;
+                    if (e.toString().contains('LocationServiceDisabledException')) {
+                      _showSnackBar('位置情報サービスが無効です。有効にしてください。', AppColors.errorColor);
+                    } else if (e.toString().contains('PermissionDeniedException')) {
+                      _showSnackBar('位置情報へのアクセスが拒否されました。設定から許可してください。', AppColors.errorColor);
+                    } else {
+                      _showSnackBar('現在位置の取得中にエラーが発生しました: ${e.toString()}', AppColors.errorColor);
+                    }
+                  }
+                },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primaryColor,
                   padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 12),
@@ -347,7 +335,7 @@ class _ConnectPageState extends State<ConnectPage> {
               ElevatedButton.icon(
                 icon: const Icon(Icons.link_off, color: Colors.white),
                 label: const Text('ペアリングを解除', style: TextStyle(fontSize: 16, color: Colors.white)),
-                onPressed: _showUnpairConfirmationDialog,
+                onPressed: () => _showUnpairConfirmationDialog(context),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.errorColor,
                   padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 12),
@@ -363,27 +351,26 @@ class _ConnectPageState extends State<ConnectPage> {
   
 
   // ペアリング解除の確認ダイアログを表示
-  Future<void> _showUnpairConfirmationDialog() async {
+  Future<void> _showUnpairConfirmationDialog(BuildContext context) async {
     if (Platform.isIOS) {
       return showCupertinoDialog<void>(
         context: context,
-        builder: (BuildContext context) => CupertinoAlertDialog(
+        builder: (BuildContext dialogContext) => CupertinoAlertDialog(
           title: const Text('確認'),
           content: const Text('このデバイスとのペアリングを解除します。よろしいですか？'),
           actions: <CupertinoDialogAction>[
             CupertinoDialogAction(
               child: const Text('キャンセル'),
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () => Navigator.of(dialogContext).pop(),
             ),
             CupertinoDialogAction(
               isDestructiveAction: true,
               child: const Text('解除する'),
               onPressed: () async {
-                print("ペアリング解除ボタンが押されました。");
-                final currentContext = context;
+                Navigator.of(dialogContext).pop(); //先にダイアログを閉じる
                 await widget.onUnpair(widget.device.remoteId.str); // コールバックを実行
-                if (!currentContext.mounted) return; // 非同期処理後にウィジェットがまだ存在するか確認
-                Navigator.of(currentContext).pop(); // ConnectPageを閉じてメイン画面に戻る
+                if (!mounted) return;
+                Navigator.of(context).pop(); // ConnectPageを閉じてメイン画面に戻る
               },
             ),
           ],
@@ -393,7 +380,7 @@ class _ConnectPageState extends State<ConnectPage> {
       return showDialog<void>(
         context: context,
         barrierDismissible: false,
-        builder: (BuildContext context) {
+        builder: (BuildContext dialogContext) {
           return AlertDialog(
             title: const Text('確認'),
             content: const SingleChildScrollView(
@@ -407,16 +394,15 @@ class _ConnectPageState extends State<ConnectPage> {
             actions: <Widget>[
               TextButton(
                 child: const Text('キャンセル'),
-                onPressed: () => Navigator.of(context).pop(),
+                onPressed: () => Navigator.of(dialogContext).pop(),
               ),
               TextButton(
                 child: const Text('解除する', style: TextStyle(color: Colors.red)),
                 onPressed: () async {
-                  print("ペアリング解除ボタンが押されました。");
-                  final currentContext = context;
+                  Navigator.of(dialogContext).pop(); //先にダイアログを閉じる
                   await widget.onUnpair(widget.device.remoteId.str); // コールバックを実行
-                  if (!currentContext.mounted) return; // 非同期処理後にウィジェットがまだ存在するか確認
-                  Navigator.of(currentContext).pop(); // ConnectPageを閉じてメイン画面に戻る
+                  if (!mounted) return;
+                  Navigator.of(context).pop(); // ConnectPageを閉じてメイン画面に戻る
                 },
               ),
             ],
@@ -436,7 +422,7 @@ class _ConnectPageState extends State<ConnectPage> {
             onPressed: () => Navigator.pop(context),
           ),
         ),
-        child: _buildBody(),
+        child: Builder(builder: (scaffoldContext) => _buildBody(scaffoldContext)),
       );
     } else {
       return Scaffold(
@@ -452,7 +438,7 @@ class _ConnectPageState extends State<ConnectPage> {
             },
           ),
         ),
-        body: _buildBody(),
+        body: Builder(builder: (scaffoldContext) => _buildBody(scaffoldContext)),
       );
     }
   }

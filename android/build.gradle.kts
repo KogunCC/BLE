@@ -1,3 +1,19 @@
+// android/build.gradle
+
+buildscript {
+    // 使用するKotlinのバージョンを指定します
+    ext.kotlin_version = '1.9.23'
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        // Androidのビルドツールのバージョンを指定します
+        classpath 'com.android.tools.build:gradle:8.2.2'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
+
 allprojects {
     repositories {
         google()
@@ -5,17 +21,23 @@ allprojects {
     }
 }
 
-val newBuildDir: Directory = rootProject.layout.buildDirectory.dir("../../build").get()
-rootProject.layout.buildDirectory.value(newBuildDir)
-
+rootProject.buildDir = '../build'
 subprojects {
-    val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
-    project.layout.buildDirectory.value(newSubprojectBuildDir)
-}
-subprojects {
-    project.evaluationDependsOn(":app")
+    project.buildDir = "${rootProject.buildDir}/${project.name}"
 }
 
-tasks.register<Delete>("clean") {
-    delete(rootProject.layout.buildDirectory)
+tasks.register("clean", Delete) {
+    delete rootProject.buildDir
+}
+
+// android/build.gradle の一番下に追加
+
+subprojects {
+    afterEvaluate { project ->
+        if (project.hasProperty('android')) {
+            android {
+                compileSdkVersion 34
+            }
+        }
+    }
 }

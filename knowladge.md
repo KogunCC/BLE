@@ -1,174 +1,109 @@
-# プロジェクト知見サマリー
+# プロジェクト技術知見ドキュメント
 
-このドキュメントは、`bleapp` プロジェクトに関する技術的な知見や構造をまとめたものです。
+このドキュメントは、`BLE Status` プロジェクトに関する技術的な知見、アーキテクチャ、および実装の詳細をまとめた開発者向けの内部資料です。
 
 ## 1. プロジェクト概要
 
-- **名称**: `bleapp`
-- **目的**: Bluetooth Low Energy (BLE) デバイスのスキャン、接続、管理を行うためのFlutterアプリケーション。
-- **プラットフォーム**: Flutterフレームワークを利用したクロスプラットフォーム（iOS, Android, Web, Desktopなど）。
+- **名称**: BLE Status
+- **目的**: Bluetooth Low Energy (BLE) デバイスの接続状態を管理し、紛失を防ぐためのFlutterアプリケーション。汎用的なBLEデバイス管理機能に加え、専用デバイス「AreraNaiTag」と連携することで、より高度な機能を提供する。
 
-## 2. 技術スタック
+## 2. アーキテクチャと技術スタック
 
 - **フレームワーク**: Flutter
 - **言語**: Dart
-- **主要なライブラリ**:
-    - `flutter_blue_plus`: BLE通信のコア機能を提供。デバイスのスキャン、接続、切断、キャラクタリスティックの読み書きなどを担当。
-    - `shared_preferences`: ペアリング済みのデバイス情報など、少量のデータをデバイスのローカルストレージに永続化するために使用。
-    - `permission_handler`: Bluetoothや位置情報など、OSレベルでのパーミッション要求を管理。
-    - `geolocator`: スマートフォンの位置情報を高精度に取得するために使用。
-    - `url_launcher`: 外部の地図アプリケーション（Googleマップ、Appleマップなど）を起動するために使用。
-    - **データ永続化**: 位置情報履歴の保存には、`shared_preferences`の他、より堅牢な`sqflite`や`hive`などのローカルデータベースの利用も検討。
+- **主要ライブラリ**:
+    - `flutter_blue_plus`: BLE通信のコア機能（スキャン, 接続, データ送受信）。
+    - `shared_preferences`: ペアリング済みデバイス情報や最終位置情報など、少量のキーバリューデータを永続化。
+    - `permission_handler`: Bluetoothや位置情報に関するOSレベルの権限要求を管理。
+    - `geolocator`: スマートフォンのGPS位置情報を取得。
+    - `url_launcher`: 外部の地図アプリを起動し、位置情報を表示。
+    - `provider`: `ChangeNotifierProvider` を用いたテーマ管理 (`ThemeManager`) など、シンプルな状態管理に使用。
+    - `flutter_foreground_task`: アプリがバックグラウンドにある間もBLE接続を監視し、切断時に通知や位置情報記録を行うためのフォアグラウンドサービスを実行。
 
 ## 3. プロジェクト構造
 
-### `lib/` ディレクトリ
-アプリケーションの主要なDartソースコードが格納されています。
+アプリケーションの主要なソースコードは `lib/` ディレクトリに格納されています。
 
-- `main.dart`:
-    - アプリケーションのエントリーポイント。
-    - 接続済み・未接続デバイスのリストを表示するメイン画面を構築。
-- `pairing.dart`:
-    - 新規BLEデバイスをスキャンし、ユーザーがペアリング（接続）するための画面。
-- `connect_page.dart`:
-    - 接続後のデバイスと対話（データの読み書きなど）を行うための画面。
-- `models/paired_device.dart`:
-    - ペアリング済みデバイスの情報を保持するためのデータモデルクラスを定義。デバイスIDや名前などが含まれる。
-- `utils/app_constants.dart`:
-    - アプリケーション全体で利用する定数（例: `shared_preferences`のキーなど）を定義。
+- `main.dart`: アプリのエントリーポイント。メイン画面のUI、デバイスリストの表示、および各種サービスの初期化を行う。
+- `pairing.dart`: 新規BLEデバイスのスキャンとペアリング処理を行う画面。
+- `connect_page.dart`: 接続済みデバイスの詳細情報を表示し、対話する画面（RSSI、バッテリー電圧など）。
+- `models/paired_device.dart`: ペアリング済みデバイスのデータモデル。デバイスID、名前、最終位置情報などを保持する。
+- `utils/`: アプリケーション全体で利用されるユーティリティクラス群。
+    - `app_constants.dart`: 定数管理（UUID、`shared_preferences`のキーなど）。
+    - `foreground_service_handler.dart`: フォアグラウンドサービスのタスク処理を定義するハンドラ。
+    - `location_service.dart`: `geolocator` をラップし、位置情報の取得と地図アプリ連携を担う。
+    - `notification_service.dart`: ローカル通知の表示を管理。
+    - `theme_manager.dart`: `ChangeNotifier` を利用してアプリのテーマ（ライト/ダーク）を管理。
 
-### その他主要ファイル・ディレクトリ
+## 4. 主要機能と実装詳細
 
-- `pubspec.yaml`: プロジェクトの依存ライブラリ、アセット、フォントなどを定義する設定ファイル。
-- `analysis_options.yaml`: Dartの静的解析（Lint）ルールを定義。コード品質を維持するために`flutter_lints`が採用されている。
-- `test/`: アプリケーションの単体テストやウィジェットテストを格納するディレクトリ。
-- `ios/` & `android/`: 各プラットフォーム固有の設定やコードを格納するディレクトリ。BLEやパーミッションに関するネイティブ設定（`Info.plist`や`AndroidManifest.xml`）が含まれる。
+### 4.1. 状態管理 (`Provider` & `ValueNotifier`)
 
-## 4. 主要な機能と実装の流れ
+- **テーマ管理**: `ChangeNotifierProvider` と `ThemeManager` (`ChangeNotifier`を継承) を使用し、アプリ全体のテーマ状態を管理。UIは `Provider.of<ThemeManager>(context)` を通じてテーマの変更をリッスンする。
+- **UIイベント通知**: `ValueNotifier<SnackBarEvent?>` を利用して、ビジネスロジック層からUI層へ `SnackBar` の表示イベントを通知。`main.dart`で `ValueNotifier` をリッスンし、イベント発生時に `ScaffoldMessenger` を使って `SnackBar` を表示する。これにより、UIコードからビジネスロジックを分離している。
 
-1.  **パーミッション要求**:
-    - `permission_handler` を使用し、アプリ起動時やスキャン前にBluetoothと位置情報の利用許可をユーザーに求める。
-2.  **デバイススキャン**:
-    - `pairing.dart`画面で`flutter_blue_plus`の`startScan`を呼び出し、周辺のBLEデバイスを探索する。
-    - 発見したデバイスをリスト表示する。
-3.  **接続とペアリング**:
-    - ユーザーがリストからデバイスを選択すると、`connect`メソッドで接続を試みる。
-    - 接続に成功したデバイス情報は`shared_preferences`を利用して永続化する。
-4.  **デバイスリスト表示**:
-    - `main.dart`画面で`shared_preferences`からペアリング済みデバイスリストを読み込む。
-    - `flutter_blue_plus`で各デバイスの現在の接続状態（Connected/Disconnected）を確認し、2つのリストに分けて表示する。
-5.  **デバイスとの対話**:
-    - 接続済みデバイスを選択すると`connect_page.dart`に遷移し、サービスの探索やキャラクタリスティックの読み書きを行う。
-6.  **位置情報取得と地図アプリ連携**:
-    - `geolocator`を用いてスマートフォンの現在位置情報を取得する。
-    - `url_launcher`を用いて取得した位置情報を外部の地図アプリケーションに渡し、表示する。
-7.  **デバイス切断時の位置情報記録**:
-    - Bluetoothデバイスが切断された際、バックグラウンドでスマートフォンの位置情報を自動的に取得し、デバイスに紐付けて永続化する。
-8.  **切断デバイスの最終位置表示**:
-    - 永続化された最終位置情報を読み込み、地図アプリケーションで表示する。
-9.  **デバイス削除時の位置情報削除**:
-    - デバイスがアプリから削除された際、関連する位置情報もストレージから削除する。
+### 4.2. BLE通信 (`flutter_blue_plus`)
 
-## 5. 開発ワークフロー
+- **デバイススキャン**: `pairing.dart` で `FlutterBluePlus.startScan` を呼び出し、非同期ストリームでデバイスを検出。
+- **接続と状態監視**: `BluetoothDevice.connect` で接続を確立。`device.connectionState.listen` を用いて接続状態の変化をリアルタイムに監視し、UI（`_deviceConnectionStatus`）を更新する。
+- **データ永続化**: 接続に成功したデバイスは `PairedDevice` オブジェクトとして `shared_preferences` にJSON形式で保存される。
 
-- **依存関係のインストール**:
+### 4.3. バックグラウンド処理 (`flutter_foreground_task`)
+
+- **目的**: アプリがバックグラウンド状態でもBLEデバイスの接続が切れたことを検知し、ユーザーに通知したり、最終位置を記録したりするため。
+- **実装**: 
+    1.  `main()` で `FlutterForegroundTask.init()` を呼び出し、フォアグラウンドサービスを初期化。
+    2.  BLEデバイスに接続成功後、`_startForegroundService()` を呼び出してサービスを開始。
+    3.  `@pragma('vm:entry-point')` を付与したトップレベル関数 `startCallback()` がサービスのエントリーポイントとなる。
+    4.  `ForegroundServiceHandler` クラスが実際のバックグラウンドタスクを処理する。現在はサービスの停止ボタンを処理するのみだが、定期的な接続確認などのロジックを実装可能。
+    5.  `didChangeAppLifecycleState` でアプリのライフサイクルを監視し、バックグラウンド移行時に通知を出すなどの処理を実装。
+
+### 4.4. エラーハンドリングとユーザーフィードバック
+
+- **仕組み**: `GlobalKey<ScaffoldMessengerState>` を `MaterialApp` に設定し、アプリのどこからでも `SnackBar` を表示できるようにしている。`_showSnackBar` メソッドが `ValueNotifier` にイベントを発行し、それをリッスンしている `_handleSnackBarEvent` が `SnackBar` を表示する。
+- **シナリオ**: 
+    - **権限拒否**: `permission_handler` で権限が拒否された場合、`SnackBar` でユーザーに通知。
+    - **Bluetooth/位置情報無効**: `SnackBar` で有効化を促すメッセージを表示。
+    - **接続失敗/切断**: `SnackBar` でリアルタイムにフィードバック。
+    - **位置情報取得失敗**: `LocationService` 内で `try-catch` を行い、`Exception` の種類に応じて `SnackBar` で具体的なエラー内容（サービス無効、権限拒否など）を通知。
+
+## 5. プラットフォーム固有設定
+
+### 5.1. iOS (`ios/Runner/Info.plist`)
+
+- **Bluetooth**: `NSBluetoothAlwaysUsageDescription` - バックグラウンドでのBLE通信のために必要。
+- **Location**: `NSLocationWhenInUseUsageDescription`, `NSLocationAlwaysAndWhenInUseUsageDescription` - 位置情報の取得とバックグラウンドでの追跡に必要。
+- **Background Modes**: バックグラウンドでBLE通信を継続するために、`UIBackgroundModes` に `bluetooth-central` を追加する必要がある。
+
+### 5.2. Android (`android/app/src/main/AndroidManifest.xml`)
+
+- **Permissions**:
+    - `android.permission.BLUETOOTH_SCAN`, `android.permission.BLUETOOTH_CONNECT` (Android 12+)
+    - `android.permission.ACCESS_FINE_LOCATION`
+    - `android.permission.ACCESS_BACKGROUND_LOCATION` (Android 10+)
+    - `android.permission.FOREGROUND_SERVICE`
+- **Foreground Service**: `flutter_foreground_task` のために、`AndroidManifest.xml` にサービス定義が追加される。
+
+## 6. 開発とテスト
+
+- **開発ワークフロー**:
   ```bash
+  # 依存関係のインストール
   flutter pub get
-  ```
-- **アプリケーションの実行**:
-  ```bash
+  
+  # アプリの実行
   flutter run
-  ```
-- **コードの静的解析 (Lint)**:
-  ```bash
+  
+  # 静的コード解析
   flutter analyze
-  ```
-- **テストの実行**:
-  ```bash
+  
+  # テストの実行
   flutter test
   ```
+- **テスト戦略**:
+    - **Widget Test**: `test/widget_test.dart` にサンプルあり。UIコンポーネントのレンダリングとインタラクションを検証。
+    - **Unit Test**: `PairedDevice` の `toJson`/`fromJson` など、モデルクラスのロジックを単体で検証。
+    - **Integration Test**: `flutter_blue_plus` や `geolocator` などのプラグインをモック化し、機能間の連携をテストする。
 
-## 6. コーディング規約
-
-- DartおよびFlutterの標準的なコーディング規約に従う。
-- `analysis_options.yaml`に定義されたLintルールを遵守する。
-- UIコンポーネントは`main.dart`で見られるような統一されたスタイル（`Scaffold`, `AppBar`の色: `0xFF66B2A3`など）を維持する。
-
-## 7. アルゴリズム的知見と設計パターン
-
-### 7.1. BLEデバイスのスキャンとフィルタリング
-
--   `flutter_blue_plus`の`startScan`メソッドは、周辺のBLEデバイスを非同期ストリームとして継続的に発見します。
--   スキャン結果から重複するデバイスを除外したり、特定のサービスUUIDを持つデバイスのみを対象とするフィルタリングロジックが実装されています。これは、効率的なデバイス発見と目的のデバイスへの絞り込みに寄与します。
-
-### 7.2. デバイス状態管理
-
--   `main.dart`における接続済み・未接続デバイスのリスト表示では、`flutter_blue_plus`が提供するデバイスの接続状態（`connectionState`）のストリームを購読し、UIをリアルタイムで更新するパターンが採用されています。
--   Flutterの`StreamBuilder`や、より高度な状態管理ソリューション（例: Provider, Riverpodなど、プロジェクトの規模に応じて選択）が、非同期データフローとUIの同期に利用されている可能性があります。
-
-### 7.3. 永続化とデータ構造
-
--   `shared_preferences`を用いたデバイス情報の永続化は、キーバリュー形式のシンプルなストレージを利用しています。
--   `models/paired_device.dart`で定義された`PairedDevice`クラスは、デバイスの識別子（ID）と表示名などの情報を保持するデータ構造として機能します。このクラスは、永続化されたデータをアプリケーション内で扱いやすいオブジェクトに変換するために利用されます。
--   ペアリング済みデバイスのリストは、アプリケーションの起動時に読み込まれ、接続・切断イベントに応じて追加・削除・更新といった基本的なリスト操作が行われます。
--   **位置情報データの管理**: デバイスの切断時に記録される位置情報は、タイムスタンプと共に各デバイスに紐付けて保存されます。複数の切断履歴を保持する場合、リスト形式で管理し、最新のものを優先的に表示するなどのロジックが必要となります。
-
-### 7.4. 非同期処理とエラーハンドリング
-
--   BLE操作（スキャン、接続、データの読み書きなど）は本質的に非同期であるため、Dartの`async/await`パターンが多用されています。これにより、非同期処理のコードが同期処理のように読みやすく記述されています。
--   接続失敗、パーミッション拒否、タイムアウトなどのエラーケースに対しては、`try-catch`ブロックを用いた堅牢なエラーハンドリングが実装されており、ユーザーへの適切なフィードバック（例: トーストメッセージ、ダイアログ）が行われます。
--   **位置情報取得時のエラーハンドリング**: 位置情報サービスが無効な場合や、パーミッションが拒否された場合など、`geolocator`からのエラーを適切に処理し、ユーザーに通知するメカニズムが必要です。
-
-### 7.5. UIとロジックの分離
-
--   Flutterアプリケーションの設計原則に従い、UI（ウィジェット）とビジネスロジック（データ処理、BLE操作など）の分離が図られています。
--   具体的には、`StatefulWidget`の`State`クラス内でウィジェットの状態と関連ロジックを管理したり、より複雑なロジックは専用のクラス（例: `BluetoothService`のようなサービス層）に切り出すことで、コードの可読性、保守性、テスト容易性を高めています。
-
-### 7.6. バックグラウンド処理の設計
-
--   デバイス切断時の位置情報記録は、アプリがフォアグラウンドにない場合でも動作する必要があります。このため、プラットフォーム固有のバックグラウンド処理（Android Service, iOS Background Modes）の検討と実装が必要です。
--   バックグラウンドでの位置情報取得はバッテリー消費に影響するため、効率的な取得頻度や、必要な時のみ起動するなどの最適化が求められます。
-
-## 8. プラットフォーム固有の考慮事項
-
-### 8.1. iOS
-
--   **パーミッション**: iOSでは、`Info.plist`にBluetoothの使用目的を記述する必要があります（`NSBluetoothAlwaysUsageDescription`または`NSBluetoothPeripheralUsageDescription`）。位置情報もBLEスキャンに必要となる場合があります。
--   **位置情報パーミッション**: 位置情報追跡機能のためには、`NSLocationWhenInUseUsageDescription`（アプリ使用中のみ）または`NSLocationAlwaysAndWhenInUseUsageDescription`（常に）の記述が必要です。バックグラウンドでの位置情報取得には後者が必要となります。
--   **バックグラウンド動作**: iOSでは、バックグラウンドでのBLEスキャンや接続には特定の要件（`UIBackgroundModes`の設定など）があり、制限が多いです。位置情報取得も同様に、バックグラウンドモードの設定と適切な利用が求められます。
--   **Core Bluetooth**: `flutter_blue_plus`は内部的にiOSのCore Bluetoothフレームワークを利用しており、その制約や挙動に準拠します。
-
-### 8.2. Android
-
--   **パーミッション**: Android 6.0 (API 23) 以降では、BLEスキャンに位置情報パーミッション（`ACCESS_FINE_LOCATION`または`ACCESS_COARSE_LOCATION`）が必要です。Android 12 (API 31) 以降では、`BLUETOOTH_SCAN`, `BLUETOOTH_ADVERTISE`, `BLUETOOTH_CONNECT`などの新しいパーミッションが導入されています。
--   **位置情報パーミッション**: 位置情報追跡機能のためには、`ACCESS_FINE_LOCATION`または`ACCESS_COARSE_LOCATION`が必要です。バックグラウンドでの位置情報取得には、Android 10 (API 29) 以降で`ACCESS_BACKGROUND_LOCATION`パーミッションも必要となります。
--   **位置情報サービス**: Androidでは、BLEスキャンを行う際に位置情報サービスが有効になっている必要があります。位置情報追跡機能でも同様に、位置情報サービスが有効になっているかを確認し、無効な場合はユーザーに有効化を促す必要があります。
--   **Bluetoothアダプターの状態**: Bluetoothアダプターが有効になっているかどうかのチェックと、無効な場合にユーザーに有効化を促す処理が必要です。
--   **BluetoothLeScanner**: `flutter_blue_plus`は内部的にAndroidのBluetoothLeScanner APIを利用しており、その制約や挙動に準拠します。
-
-## 9. エラーハンドリングの詳細
-
--   **ユーザーへのフィードバック**:
-    -   **トーストメッセージ/SnackBar**: 短時間で消えるメッセージで、成功や軽微なエラーを通知。
-    -   **AlertDialog**: ユーザーの操作が必要な重要なエラーや確認事項を表示。
-    -   **エラー画面/状態表示**: 致命的なエラーや、データがない場合などに専用のUIを表示。
--   **具体的なエラーシナリオ**:
-    -   **Bluetoothが無効**: ユーザーにBluetoothを有効にするよう促す。
-    -   **パーミッション拒否**: 設定画面への誘導や、機能が利用できない旨を伝える。
-    -   **デバイスが見つからない**: スキャン結果が空の場合のメッセージ表示。
-    -   **接続失敗/切断**: ネットワークの問題やデバイス側の問題で接続が確立できない、または切断された場合の再試行や通知。
-    -   **タイムアウト**: 特定の操作（スキャン、接続など）が一定時間内に完了しない場合の処理。
-
-## 10. テスト戦略
-
--   **ウィジェットテスト**: UIコンポーネントが正しくレンダリングされ、ユーザーインタラクションに反応するかを検証。`main.dart`, `pairing.dart`, `connect_page.dart`などのUI部分が対象。
--   **ユニットテスト**: ビジネスロジックやデータモデル（例: `PairedDevice`クラスのシリアライズ/デシリアライズ）が単体で正しく機能するかを検証。
--   **統合テスト**: アプリケーションの複数のコンポーネントが連携して正しく動作するかを検証。BLE通信のモック化や、実際のデバイスを用いたテストが考えられます。
--   **モック/スタブ**: 実際のBLEデバイスや`shared_preferences`などの外部依存をモック化し、テストの独立性と再現性を確保。
-
-## 11. UI/UXの原則
-
--   **一貫性のあるデザイン**: `main.dart`で定義されている`AppBar`の色（`0xFF66B2A3`）や`Card`のスタイルなど、プロジェクト全体で統一されたデザインガイドラインに従う。
--   **ユーザーフレンドリーなフィードバック**: BLE操作の進行状況（スキャン中、接続中など）を明確に表示し、ユーザーが現在の状態を理解できるようにする。位置情報取得中や、位置情報サービスが無効な場合など、ユーザーに適切なフィードバックを提供する。
--   **直感的な操作**: デバイスの選択、接続、切断などの主要な操作が直感的に行えるようにUIを設計。位置情報表示ボタンの配置や、地図アプリへのスムーズな遷移を考慮する。
--   **アクセシビリティ**: 可能な範囲で、視覚障害者やその他のユーザーがアプリを利用しやすいように配慮（例: セマンティックラベルの追加）。
+---
+*このドキュメントはプロジェクトの理解を深めるためのものであり、コードの変更に応じて随時更新されるべきです。*

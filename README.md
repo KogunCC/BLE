@@ -1,90 +1,121 @@
 # BLE Status - Bluetooth Device Management & Tracking App
 
-## Overview
+**BLE Status** is a Flutter application designed to manage the connection status of Bluetooth Low Energy (BLE) devices and prevent their misplacement or loss. It provides real-time tracking, connection management, and location history for any BLE device.
 
-"BLE Status" is a Flutter application designed to manage the connection status of Bluetooth Low Energy (BLE) devices and prevent their misplacement or loss. In addition to general BLE device tracking, it offers richer information acquisition and advanced tracking capabilities through integration with the dedicated companion device "AreraNaiTag."
+Additionally, it offers richer information and advanced tracking capabilities when integrated with its dedicated companion device, **"AreraNaiTag."**
+
+## 📸 Screenshots
+
+*(Here you can add screenshots of the application. For example:)*
+
+| Main Screen | Device Connection Screen |
+| :---: | :---: |
+| ![Main Screen](https://via.placeholder.com/300x600.png?text=Main+Screen) | ![Connection Screen](https://via.placeholder.com/300x600.png?text=Connection+Screen) |
 
 ## 🚀 Key Features
 
 ### General Features (Compatible with all BLE devices)
-*   **Device Scanning**: Discovers nearby BLE devices in real-time.
-*   **Connection and Management**: Establishes connections to selected devices, displays connection status, and locally saves paired devices.
-*   **Location Tracking**:
-    *   **Current Location Display for Connected Devices**: Allows users to view the current location of the connected device and the smartphone on a map.
-    *   **Location Information Recording on Device Disconnection**: Automatically records the smartphone's location when a device disconnects.
-    *   **Last Known Location Display for Disconnected Devices**: Displays the recorded last known location on a map.
-    *   **Location Information Deletion on Device Removal**: Cleans up associated location data when a device is removed from the app.
+- **Device Scanning**: Discovers nearby BLE devices in real-time.
+- **Connection & Management**: Establishes connections, displays status, and locally saves paired devices.
+- **Real-time Status**: Shows whether a device is connected or disconnected.
+- **Location Tracking**:
+  - **Current Location**: View the current location of connected devices on a map.
+  - **Disconnection Logging**: Automatically records the smartphone's location when a device disconnects.
+  - **Last Known Location**: Displays the last recorded location for disconnected devices.
 
-### Extended Features (AreraNaiTag Dedicated Device Integration)
-*   **Real-time Battery Voltage Display**: Monitors the battery voltage of AreraNaiTag in real-time.
-*   **(Future) Smartphone Call via Button Press**: A feature to call the smartphone by pressing a button on AreraNaiTag.
+### Extended Features (with AreraNaiTag)
+- **Real-time Battery Monitoring**: Displays the battery voltage of the AreraNaiTag.
+- **(Future) Smartphone Call**: A planned feature to find your smartphone by pressing a button on the AreraNaiTag.
 
-## 🛠 Development Environment and Setup
+## 🧩 About AreraNaiTag
 
-### Technology Stack
-*   **Framework**: Flutter
-*   **Language**: Dart
-*   **Key Libraries**:
-    *   `flutter_blue_plus`: Core functionality for BLE communication.
-    *   `shared_preferences`: Persistent data storage for local data.
-    *   `permission_handler`: Manages OS-level permissions.
-    *   `geolocator`: Acquires smartphone location information.
-    *   `url_launcher`: Launches external applications (e.g., map apps).
-    *   **Data Persistence**: For storing location history, `shared_preferences` is used, with consideration for more robust local databases like `sqflite` or `hive`.
+**AreraNaiTag** is a concept for a dedicated companion hardware device designed to work seamlessly with the BLE Status app. It is envisioned as a small, battery-powered tag that can be attached to personal belongings.
 
-### Project Structure
-Main source code is located in the `lib/` directory.
-*   `lib/main.dart`: Application entry point, main screen.
-*   `lib/pairing.dart`: New BLE device scanning and pairing screen.
-*   `lib/connect_page.dart`: Screen for interacting with connected devices.
-*   `lib/models/paired_device.dart`: Data model for paired devices.
-*   `lib/utils/`: Constants and utility functions used throughout the application.
+- **Specification**: Low-power BLE module, button for interaction.
+- **Availability**: This is a conceptual device for demonstration purposes and is not commercially available.
 
-### Development Workflow
+## 🛠️ Technology Stack
+
+- **Framework**: Flutter
+- **Language**: Dart
+- **Core Libraries**:
+  - `flutter_blue_plus`: For all BLE communication.
+  - `shared_preferences`: For local data persistence (paired devices, location history).
+  - `permission_handler`: To manage OS-level permissions (Bluetooth, Location).
+  - `geolocator`: To acquire the smartphone's location.
+  - `url_launcher`: To launch external map applications.
+  - `flutter_foreground_task`: For background processing to monitor connections.
+
+## 📂 Project Structure
+
+The main source code is located in the `lib/` directory.
+```
+lib/
+├── main.dart           # App entry point, main screen
+├── pairing.dart        # Screen for scanning and pairing new devices
+├── connect_page.dart   # Screen for interacting with a connected device
+├── models/
+│   └── paired_device.dart # Data model for paired devices
+└── utils/
+    ├── app_constants.dart
+    ├── foreground_service_handler.dart
+    ├── location_service.dart
+    ├── notification_service.dart
+    └── theme_manager.dart
+```
+
+## ⚙️ Setup and Usage
+
+### Prerequisites
+- Flutter SDK installed ([see official guide](https://flutter.dev/docs/get-started/install)).
+- An IDE like VS Code or Android Studio.
+- For iOS: Xcode installed.
+- For Android: Android Studio and Android SDK installed.
+
+### Installation & Running
 1.  **Clone the repository**:
     ```bash
     git clone <repository-url>
     ```
-2.  **Install dependencies**:
+2.  **Navigate to the project directory**:
+    ```bash
+    cd FlutterApp
+    ```
+3.  **Install dependencies**:
     ```bash
     flutter pub get
     ```
-3.  **Run the application**:
+4.  **Run the application**:
     ```bash
     flutter run
     ```
-4.  **Static code analysis (Lint)**:
-    ```bash
-    flutter analyze
-    ```
-5.  **Run tests**:
-    ```bash
-    flutter test
-    ```
 
-> ⚠️ Ensure Flutter SDK is correctly installed and configured. Refer to [flutter.dev](https://flutter.dev/docs/get-started/install) for setup instructions.
+### How to Use
+1.  **Pair a New Device**:
+    - Tap the "ペアリング画面へ" (Go to Pairing) button on the main screen.
+    - The app will scan for nearby BLE devices.
+    - Select a device from the list to pair and connect.
+2.  **View Connected Devices**:
+    - Connected devices are listed under the "接続済み" (Connected) section on the main screen.
+    - Tap on a device to view more details, such as RSSI, estimated distance, and battery level (for AreraNaiTag).
+3.  **Find a Disconnected Device**:
+    - Disconnected devices appear under the "接続が切れたデバイス" (Disconnected) section.
+    - Tap the location icon (📍) to view the device's last known location on a map.
+    - Tap the device card to attempt reconnection.
 
-## 💡 Technical Insights (Excerpts)
+## 💡 Future Work
 
-### BLE Device Scanning and Filtering
-Utilizes `flutter_blue_plus`'s `startScan` method to discover nearby BLE devices as an asynchronous stream. Logic for duplicate exclusion and filtering by specific service UUIDs is implemented for efficient device discovery.
+- **Implement Smartphone Call**: Enable the "find my phone" feature using the AreraNaiTag button.
+- **Enhanced Location History**: Implement a more robust local database (like `sqflite` or `hive`) to store a history of disconnection locations.
+- **Customizable Alerts**: Allow users to configure alerts for connection/disconnection events.
 
-### Device State Management
-Adopts a pattern of subscribing to the device's connection state (`connectionState`) stream to update the UI in real-time. Flutter's `StreamBuilder` or more advanced state management solutions (Provider, Riverpod, etc.) can be used.
+## 🤝 Contributing
 
-### Persistence and Data Structure
-`shared_preferences` is used for persisting device information, and the `PairedDevice` class manages device identifiers and display names. Location data is stored linked to each device with a timestamp.
+Contributions, issues, and feature requests are welcome! Feel free to check the [issues page](https://github.com/your-username/your-repository/issues).
 
-### Asynchronous Processing and Error Handling
-BLE operations and location acquisition are asynchronous, so Dart's `async/await` pattern is heavily used, along with robust error handling via `try-catch` blocks. Errors such as disabled location services or denied permissions are handled appropriately with user feedback.
+## 📄 License
 
-### Background Processing Design
-For recording location information upon device disconnection, even when the app is not in the foreground, consideration and implementation of platform-specific background processing (Android Service, iOS Background Modes) are necessary. Efficient acquisition frequency and controlled activation are required to manage battery consumption.
-
-### Platform-Specific Considerations
-*   **iOS**: Requires Bluetooth and location permission descriptions in `Info.plist` (`NSBluetoothAlwaysUsageDescription`, `NSLocationAlwaysAndWhenInUseUsageDescription`, etc.). Background operation has limitations.
-*   **Android**: BLE scanning requires location permissions (`ACCESS_FINE_LOCATION`, etc.). Android 10 and later also require `ACCESS_BACKGROUND_LOCATION` for background location acquisition. Verifying that location services are enabled is also crucial.
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
 ---
-
-Contributions and issue reports to this project are welcome!
+*This README was last updated on 2025-08-28.*

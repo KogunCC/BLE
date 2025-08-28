@@ -6,11 +6,7 @@ class NotificationService {
   static Future<void> initialize() async {
     const AndroidInitializationSettings initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
 
-    final DarwinInitializationSettings initializationSettingsIOS = DarwinInitializationSettings(
-      onDidReceiveLocalNotification: (id, title, body, payload) async {
-        // iOS 9以前の古いバージョン用のコールバック
-      },
-    );
+    final DarwinInitializationSettings initializationSettingsIOS = DarwinInitializationSettings();
 
     final InitializationSettings initializationSettings = InitializationSettings(
       android: initializationSettingsAndroid,

@@ -38,9 +38,10 @@ dependencies:
   shared_preferences: ^2.5.3
   permission_handler: ^11.0.0+1
   provider: ^6.0.0
-  flutter_local_notifications: ^17.0.0
+  flutter_local_notifications: ^19.4.1
   geolocator: ^14.0.2
   url_launcher: ^6.3.1
+  flutter_foreground_task: ^6.0.0
 
 dev_dependencies:
   flutter_test:

@@ -1,15 +1,8 @@
-plugins {
-    id("com.android.application")
-    id("kotlin-android")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
-    id("dev.flutter.flutter-gradle-plugin")
-}
+// android/app/build.gradle.kts
 
-// これは android/build.gradle.kts から削除する部分
 android {
     namespace = "com.example.bleapp"
-    compileSdk = flutter.compileSdkVersion
-    ndkVersion = "27.0.12077973"  // NDKバージョンの指定
+    compileSdk = 34
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -26,6 +19,9 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // 👇 ndkVersionはこちらに移動
+        ndkVersion = "27.0.12077973"
     }
 
     buildTypes {
@@ -33,8 +29,4 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
-}
-
-flutter {
-    source = "../.."
 }
